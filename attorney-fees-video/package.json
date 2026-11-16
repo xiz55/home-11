@@ -12,6 +12,7 @@
     "@fontsource/cairo": "^5.3.0",
     "@fontsource/tajawal": "^5.3.0",
     "@remotion/cli": "4.0.544",
+    "@remotion/fonts": "4.0.544",
     "@remotion/media": "4.0.544",
     "@remotion/shapes": "4.0.544",
     "react": "19.3.1",
