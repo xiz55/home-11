@@ -17,7 +17,7 @@ export const Outro: React.FC<{duration: number}> = ({duration}) => {
 	const {fps} = useVideoConfig();
 	const card = pop(frame, 2, fps);
 	const tag = pop(frame, 14, fps);
-	const phone = pop(frame, cue('outro', 'تواصل'), fps);
+	const phone = pop(frame, cue('outro', 'تريّحك'), fps);
 	return (
 		<SceneShell duration={duration} last>
 			<svg width={1080} height={1920} style={{position: 'absolute'}}>
