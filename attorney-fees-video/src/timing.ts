@@ -2,7 +2,7 @@ import timings from './data/timings.json';
 
 export const FPS = 30;
 const LEAD = 0.12;
-const TAIL = 1.6;
+const TAIL = 2.6;
 
 export type Word = {text: string; start: number; end: number};
 export type SceneId = 'hook' | 'contract' | 'methods' | 'factors' | 'example' | 'tips' | 'outro';

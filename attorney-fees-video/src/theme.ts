@@ -45,3 +45,5 @@ export const cardStyle: React.CSSProperties = {
 	borderRadius: 36,
 	boxShadow: '0 24px 60px rgba(0,0,0,0.35)',
 };
+
+export const PHONE = '0537256669';
