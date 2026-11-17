@@ -10,6 +10,7 @@ Runs only on 127.0.0.1. No third-party Python packages are required.
 """
 import json
 import os
+import queue
 import re
 import shutil
 import signal
@@ -114,7 +115,8 @@ STATE_FILE = os.path.join(ROOT, ".session.json")
 
 class State:
     lock = threading.Lock()
-    proc = None
+    busy = False
+    interrupted = False
     session_id = None
     whisper = None
     voice = None
@@ -272,8 +274,10 @@ def summarize_tool(name, inp):
 
 
 def claude_args():
-    args = [CFG["claude_bin"], "-p", "--output-format", "stream-json", "--verbose",
-            "--include-partial-messages", "--permission-mode", CFG["permission_mode"],
+    # One long-lived Claude Code process per conversation (official stream-json input mode):
+    # no start-up cost per turn, instant interrupt, and the same session/context throughout.
+    args = [CFG["claude_bin"], "-p", "--input-format", "stream-json", "--output-format", "stream-json",
+            "--verbose", "--include-partial-messages", "--permission-mode", CFG["permission_mode"],
             "--append-system-prompt", SYSTEM_PROMPT.get(CFG["language_style"], SYSTEM_PROMPT["saudi"])]
     if CFG["allowed_tools"]:
         args += ["--allowedTools", ",".join(CFG["allowed_tools"])]
@@ -284,29 +288,107 @@ def claude_args():
     return args
 
 
-def run_claude(text, emit):
+class ClaudeProcess:
+    """Persistent `claude -p --input-format stream-json` child; events are read by a background thread."""
+
+    def __init__(self):
+        self.proc = None
+        self.events = queue.Queue()
+        self.stderr_tail = []
+
+    def alive(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    def ensure(self):
+        if self.alive():
+            return
+        log("CLAUDE: starting", "(resume " + State.session_id + ")" if State.session_id else "(new session)")
+        self.events = queue.Queue()
+        self.stderr_tail = []
+        self.proc = subprocess.Popen(claude_args(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE, cwd=CFG["workdir"], text=True, encoding="utf-8",
+                                     bufsize=1, start_new_session=True)
+        proc, events, tail = self.proc, self.events, self.stderr_tail
+
+        def read_out():
+            for line in proc.stdout:
+                line = line.strip()
+                if line:
+                    try:
+                        events.put(json.loads(line))
+                    except ValueError:
+                        pass
+            events.put(None)  # process ended
+
+        def read_err():
+            for line in proc.stderr:
+                tail.append(line)
+                del tail[:-20]
+
+        threading.Thread(target=read_out, daemon=True).start()
+        threading.Thread(target=read_err, daemon=True).start()
+
+    def send(self, obj):
+        self.proc.stdin.write(json.dumps(obj, ensure_ascii=False) + "\n")
+        self.proc.stdin.flush()
+
+    def interrupt(self):
+        if not self.alive():
+            return False
+        try:
+            self.send({"type": "control_request", "request_id": uuid.uuid4().hex,
+                       "request": {"subtype": "interrupt"}})
+            return True
+        except (BrokenPipeError, OSError):
+            self.kill()
+            return True
+
+    def kill(self):
+        p = self.proc
+        self.proc = None
+        if p and p.poll() is None:
+            try:
+                os.killpg(p.pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                p.terminate()
+
+
+CLAUDE = ClaudeProcess()
+
+
+def run_claude(text, emit, _retry=True):
     """Run one turn of the persistent Claude Code session, calling emit(dict) for each UI event."""
-    args = claude_args()
-    log("CLAUDE:", "resume" if State.session_id else "new session", "|", text[:80])
-    proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            cwd=CFG["workdir"], text=True, encoding="utf-8", bufsize=1,
-                            start_new_session=True)
-    State.proc = proc
-    stderr_tail = []
-    threading.Thread(target=lambda: stderr_tail.extend(proc.stderr.readlines()[-20:]), daemon=True).start()
-    proc.stdin.write(text)
-    proc.stdin.close()
+    CLAUDE.ensure()
+    while True:  # drop leftovers from a previous (interrupted) turn
+        try:
+            if CLAUDE.events.get_nowait() is None:
+                CLAUDE.kill()
+                CLAUDE.ensure()
+                break
+        except queue.Empty:
+            break
+    log("CLAUDE:", text[:80])
+    State.busy = True
+    try:
+        CLAUDE.send({"type": "user", "message": {"role": "user", "content": text}})
+    except (BrokenPipeError, OSError):
+        CLAUDE.kill()
+        if _retry:
+            return run_claude(text, emit, False)
+        raise
 
     streamed = set()
-    got_result = False
-    for line in proc.stdout:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            ev = json.loads(line)
-        except ValueError:
-            continue
+    while True:
+        ev = CLAUDE.events.get()
+        if ev is None:  # process died mid-turn
+            time.sleep(0.2)
+            err = "".join(CLAUDE.stderr_tail).strip()[-600:]
+            CLAUDE.kill()
+            if State.session_id and "session" in err.lower():
+                State.session_id = None  # stale session id must not brick the assistant
+            State.save()
+            emit({"type": "error", "text": err or "Claude Code توقف بشكل غير متوقع"})
+            return
         t = ev.get("type")
         if ev.get("session_id"):
             State.session_id = ev["session_id"]
@@ -328,36 +410,22 @@ def run_claude(text, emit):
                     emit({"type": "tool", "name": block.get("name"),
                           "detail": summarize_tool(block.get("name"), block.get("input"))})
         elif t == "result":
-            got_result = True
+            State.save()
+            if State.interrupted:
+                emit({"type": "stopped"})
+                return
             denials = [f"{d.get('tool_name')}: {summarize_tool(d.get('tool_name'), d.get('tool_input'))}"
                        for d in (ev.get("permission_denials") or [])]
             emit({"type": "result", "is_error": bool(ev.get("is_error")), "text": ev.get("result") or "",
                   "denials": denials, "session_id": State.session_id,
                   "cost": ev.get("total_cost_usd")})
-    rc = proc.wait()
-    State.proc = None
-    State.save()
-    if not got_result:
-        time.sleep(0.2)
-        err = "".join(stderr_tail).strip()[-600:]
-        if rc not in (0, -signal.SIGTERM, -signal.SIGKILL):
-            emit({"type": "error", "text": err or f"claude exited with code {rc}"})
-            # A stale/invalid session id should not brick the assistant.
-            if State.session_id and "session" in err.lower():
-                State.session_id = None
-                State.save()
-        else:
-            emit({"type": "stopped"})
+            return
 
 
 def stop_claude():
-    p = State.proc
-    if p and p.poll() is None:
-        try:
-            os.killpg(p.pid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            p.terminate()
-        return True
+    if State.busy:
+        State.interrupted = True
+        return CLAUDE.interrupt()
     return False
 
 
@@ -403,7 +471,7 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/api/status":
             return self._json({
-                "session_id": State.session_id, "busy": State.proc is not None,
+                "session_id": State.session_id, "busy": State.busy,
                 "stt": whisper_ready(), "tts_engine": CFG["tts"]["engine"],
                 "voice": State.voice if CFG["tts"]["engine"] == "say" else CFG["tts"]["edge_voice"],
                 "workdir": CFG["workdir"], "permission_mode": CFG["permission_mode"],
@@ -453,6 +521,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"stopped": stop_claude()})
             if path == "/api/reset":
                 stop_claude()
+                CLAUDE.kill()
                 State.session_id = None
                 State.save()
                 return self._json({"ok": True})
@@ -486,12 +555,13 @@ class Handler(BaseHTTPRequestHandler):
                     alive[0] = False
                     stop_claude()
 
+            State.interrupted = False
             try:
                 run_claude(text, emit)
             except FileNotFoundError:
                 emit({"type": "error", "text": f"لم يتم العثور على Claude Code ({CFG['claude_bin']})"})
         finally:
-            State.proc = None
+            State.busy = False
             State.lock.release()
 
 
@@ -532,7 +602,7 @@ def main():
     srv.daemon_threads = True
 
     def shutdown(*_):
-        stop_claude()
+        CLAUDE.kill()
         if State.whisper:
             State.whisper.terminate()
         os._exit(0)
