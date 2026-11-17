@@ -1,0 +1,9 @@
+{
+  "port": 8765,
+  "workdir": "~",
+  "model": "",
+  "permission_mode": "acceptEdits",
+  "language_style": "saudi",
+  "tts": { "engine": "say", "voice": "auto", "rate": 185, "edge_voice": "ar-SA-HamedNeural" },
+  "stt": { "model": "models/ggml-large-v3-turbo-q5_0.bin", "language": "ar" }
+}

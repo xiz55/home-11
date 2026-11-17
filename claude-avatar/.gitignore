@@ -1,0 +1,7 @@
+config.json
+.session.json
+.server.pid
+server.log
+models/*.bin
+web/models/*.vrm
+__pycache__/

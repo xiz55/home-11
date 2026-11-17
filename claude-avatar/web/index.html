@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Avatar</title>
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three/three.module.js",
+  "three/addons/": "./vendor/three/addons/",
+  "@pixiv/three-vrm": "./vendor/three-vrm.module.min.js"
+} }
+</script>
+<style>
+  :root { --bg1: #1d2433; --bg2: #0c0f16; --fg: #eef1f6; --muted: #9aa3b5; --panel: rgba(16, 20, 30, .72); --line: rgba(255,255,255,.12); --accent: #d97757; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: radial-gradient(ellipse at 50% 30%, var(--bg1), var(--bg2)); color: var(--fg);
+    font: 15px/1.6 -apple-system, "SF Arabic", "Geeza Pro", system-ui, sans-serif; }
+  #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #panel { position: fixed; inset: auto 16px 16px 16px; max-width: 860px; margin: 0 auto; background: var(--panel); backdrop-filter: blur(14px);
+    border: 1px solid var(--line); border-radius: 18px; padding: 14px 16px; display: grid; gap: 8px; }
+  #panel.collapsed .body { display: none; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  #status { font-weight: 600; padding: 3px 12px; border-radius: 999px; background: rgba(255,255,255,.08); }
+  #status[data-state=listening] { background: #1f5130; } #status[data-state=recording] { background: #8a2b2b; }
+  #status[data-state=thinking], #status[data-state=transcribing] { background: #5a4a1a; } #status[data-state=speaking] { background: #6b3a26; }
+  .meter { flex: 1; min-width: 80px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; }
+  #meter { height: 100%; width: 0; background: var(--accent); transition: width .06s; }
+  #you { color: var(--muted); } #you:not(:empty)::before { content: "أنت: "; }
+  #reply { max-height: 22vh; overflow: auto; white-space: pre-wrap; }
+  #activity, #session { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+  button, .filebtn { font: inherit; color: var(--fg); background: rgba(255,255,255,.08); border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px; cursor: pointer; }
+  button:hover, .filebtn:hover { background: rgba(255,255,255,.15); }
+  #start { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 20px; padding: 14px 28px; background: var(--accent); border: 0; border-radius: 14px; z-index: 2; }
+  body:not(.running) #panel .controls button:not(#hide):not(#full) { opacity: .4; pointer-events: none; }
+  form { display: flex; gap: 8px; } input[type=text] { flex: 1; min-width: 0; font: inherit; color: var(--fg); background: rgba(0,0,0,.25); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+  input[type=file] { display: none; }
+  @media (max-width: 600px) { #panel { inset: auto 8px 8px 8px; } }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<button id="start">ابدأ المحادثة 🎙</button>
+<div id="panel">
+  <div class="row controls">
+    <span id="status">متوقف</span>
+    <div class="meter"><div id="meter"></div></div>
+    <button id="listen"></button>
+    <button id="stop" title="Esc">⏹ إيقاف</button>
+    <button id="reset">محادثة جديدة</button>
+    <label class="filebtn">تغيير الشخصية<input id="file" type="file" accept=".vrm"></label>
+    <button id="full">⛶</button>
+    <button id="hide">▾</button>
+  </div>
+  <div class="body">
+    <div id="you"></div>
+    <div id="reply"></div>
+    <div id="activity"></div>
+    <form id="form"><input id="text" type="text" placeholder="أو اكتب أمرك هنا…" autocomplete="off"><button>إرسال</button></form>
+    <div id="session"></div>
+  </div>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
