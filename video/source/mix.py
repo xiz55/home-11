@@ -4,7 +4,7 @@ files=[];filters=[];labels=[]
 def add(f,t,vol,extra=''):
     k=len(files); files.append(f); ms=int(t*1000)
     filters.append(f"[{k}:a]aresample=44100,aformat=channel_layouts=stereo{extra},volume={vol},adelay={ms}|{ms}[a{k}]"); labels.append(f"[a{k}]")
-for i,l in enumerate(TL): add(f"abd/l{i:02d}.mp3",l['start'],1.0)
+for i,l in enumerate(TL): add(f"v3/l{i:02d}.mp3",l['start'],1.0)
 filters.append("".join(labels)+f"amix=inputs={len(labels)}:normalize=0,apad=whole_dur=59,asplit=2[vo][vsc]")
 labels=[]
 add('sfx_siren.mp3',0.2,0.25,',afade=t=out:st=5.5:d=1.2')
