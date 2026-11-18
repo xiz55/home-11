@@ -16,7 +16,14 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: radial-gradient(ellipse at 50% 30%, var(--bg1), var(--bg2)); color: var(--fg);
     font: 15px/1.6 -apple-system, "SF Arabic", "Geeza Pro", system-ui, sans-serif; }
-  #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #scene, #portrait { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  canvas[hidden] { display: none !important; }
+  #calibrate { position: fixed; inset: 0; z-index: 5; background: rgba(5,7,12,.94); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 16px; }
+  #calibrate[hidden] { display: none; }
+  #calibTip { font-size: 18px; font-weight: 600; text-align: center; }
+  #calibrate .wrap { position: relative; }
+  #calibImg { display: block; max-width: calc(100vw - 32px); max-height: calc(100vh - 90px); cursor: crosshair; }
+  #calibDots i { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; pointer-events: none; }
   #panel { position: fixed; inset: auto 16px 16px 16px; max-width: 860px; margin: 0 auto; background: var(--panel); backdrop-filter: blur(14px);
     border: 1px solid var(--line); border-radius: 18px; padding: 14px 16px; display: grid; gap: 8px; }
   #panel.collapsed .body { display: none; }
@@ -40,6 +47,8 @@
 </head>
 <body>
 <canvas id="scene"></canvas>
+<canvas id="portrait" hidden></canvas>
+<div id="calibrate" hidden><div id="calibTip"></div><div class="wrap"><img id="calibImg" alt=""><div id="calibDots"></div></div></div>
 <button id="start">ابدأ المحادثة 🎙</button>
 <div id="panel">
   <div class="row controls">
@@ -48,7 +57,8 @@
     <button id="listen"></button>
     <button id="stop" title="Esc">⏹ إيقاف</button>
     <button id="reset">محادثة جديدة</button>
-    <label class="filebtn">تغيير الشخصية<input id="file" type="file" accept=".vrm"></label>
+    <label class="filebtn" title="صورة شخصية (PNG/JPG) أو نموذج ‎.vrm">تغيير الشخصية<input id="file" type="file" accept=".vrm,.png,.jpg,.jpeg,.webp"></label>
+    <button id="calib" hidden>ضبط الوجه</button>
     <button id="full">⛶</button>
     <button id="hide">▾</button>
   </div>

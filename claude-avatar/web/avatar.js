@@ -5,7 +5,9 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 
 export class Avatar {
-  constructor(canvas) {
+  constructor(canvas, lip) {
+    this.canvas = canvas;
+    this.lip = lip;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -25,16 +27,18 @@ export class Avatar {
     this.clock = new THREE.Clock();
     this.vrm = null;
     this.state = 'idle';          // idle | listening | thinking | speaking
-    this.level = 0;               // smoothed mouth openness 0..1
-    this.bands = [0, 0, 0];       // low / mid / high spectrum energy
-    this.analyser = null;
     this.blink = { next: 2, t: -1 };
     this.saccade = { next: 1, x: 0, y: 0 };
     this.mouth = { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 };
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
-    this.renderer.setAnimationLoop(() => this.update());
+  }
+
+  setActive(on) {
+    this.canvas.hidden = !on;
+    this.renderer.setAnimationLoop(on ? () => this.update() : null);
+    if (on) this.resize();
   }
 
   resize() {
@@ -89,29 +93,13 @@ export class Avatar {
     set('rightHand', 0, 0, 0.1);
   }
 
-  attachAudio(analyser) { this.analyser = analyser; this.freq = new Uint8Array(analyser.frequencyBinCount); this.time = new Float32Array(analyser.fftSize); }
-
   setState(s) { this.state = s; }
 
-  readAudio() {
-    if (!this.analyser || this.state !== 'speaking') { this.level *= 0.8; return; }
-    this.analyser.getFloatTimeDomainData(this.time);
-    let sum = 0;
-    for (const v of this.time) sum += v * v;
-    const rms = Math.sqrt(sum / this.time.length);
-    const target = Math.min(1, Math.max(0, (rms - 0.01) * 7));
-    this.level += (target - this.level) * (target > this.level ? 0.55 : 0.3);
-
-    this.analyser.getByteFrequencyData(this.freq);
-    const hz = this.analyser.context.sampleRate / this.analyser.fftSize;
-    const band = (a, b) => { let s = 0, n = 0; for (let i = Math.floor(a / hz); i < Math.floor(b / hz); i++) { s += this.freq[i]; n++; } return n ? s / n / 255 : 0; };
-    const raw = [band(150, 700), band(700, 1800), band(1800, 4500)];
-    this.bands = this.bands.map((v, i) => v + (raw[i] - v) * 0.35);
-  }
+  get level() { return this.lip.level; }
 
   updateMouth() {
     const L = this.level;
-    const [lo, mid, hi] = this.bands;
+    const [lo, mid, hi] = this.lip.bands;
     const tot = lo + mid + hi + 1e-4;
     // Rough vowel shape from spectral balance: low → o/u, high → e/i, mid → a.
     const w = { aa: mid / tot + 0.25, oh: lo / tot * 0.9, ou: lo / tot * 0.5, ee: hi / tot * 0.9, ih: hi / tot * 0.5 };
@@ -127,7 +115,7 @@ export class Avatar {
     const dt = Math.min(this.clock.getDelta(), 0.1);
     const t = this.clock.elapsedTime;
     if (!this.vrm) { this.renderer.render(this.scene, this.camera); return; }
-    this.readAudio();
+    this.lip.update(this.state === 'speaking');
     const em = this.vrm.expressionManager;
 
     // Blinking (random interval, double-blink sometimes).

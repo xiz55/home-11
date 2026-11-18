@@ -1,0 +1,5 @@
+{
+ "enabled": true,
+ "image": "portrait.jpg",
+ "points": { "eyeA": [757, 333], "eyeB": [805, 324], "mouth": [790, 374], "chin": [790, 402], "top": [775, 226] }
+}

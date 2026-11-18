@@ -1,14 +1,18 @@
 import { Avatar } from './avatar.js';
+import { PortraitAvatar } from './portrait.js';
+import { LipSync } from './lipsync.js';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
   status: $('status'), you: $('you'), reply: $('reply'), activity: $('activity'), meter: $('meter'),
   start: $('start'), listen: $('listen'), stop: $('stop'), reset: $('reset'), full: $('full'),
-  text: $('text'), form: $('form'), file: $('file'), session: $('session'), panel: $('panel'), hide: $('hide'),
+  text: $('text'), form: $('form'), calib: $('calib'), file: $('file'), session: $('session'), panel: $('panel'), hide: $('hide'),
 };
 const LABEL = { idle: 'متوقف', listening: 'أسمعك…', recording: 'أسجّل كلامك…', transcribing: 'أحوّل الكلام لنص…', thinking: 'Claude يفكر وينفّذ…', speaking: 'يتكلم' };
 
-const avatar = new Avatar($('scene'));
+const lip = new LipSync();
+const avatars = { vrm: new Avatar($('scene'), lip), portrait: new PortraitAvatar($('portrait'), lip) };
+let avatar = avatars.vrm;
 const prefs = (() => { try { return JSON.parse(localStorage.getItem('cavatar') || '{}'); } catch { return {}; } })();
 const savePrefs = () => { try { localStorage.setItem('cavatar', JSON.stringify(prefs)); } catch {} };
 
@@ -24,18 +28,91 @@ function setState(s) {
 }
 
 // ------------------------------------------------------------ Avatar loading
-async function loadAvatar(url) {
-  try { await avatar.load(url); }
+// Two kinds: a 3D VRM model, or an animated portrait (any character image + 5 calibration points).
+function use(kind) {
+  for (const [k, a] of Object.entries(avatars)) a.setActive(k === kind);
+  const prev = avatar.state;
+  avatar = avatars[kind];
+  avatar.setState(prev || 'idle');
+  ui.calib.hidden = kind !== 'portrait';
+}
+
+async function loadVrm(url) {
+  try { await avatars.vrm.load(url); use('vrm'); }
   catch (e) { ui.activity.textContent = 'تعذّر تحميل الشخصية: ' + e.message; }
 }
-loadAvatar('models/default.vrm');
-ui.file.addEventListener('change', () => { const f = ui.file.files[0]; if (f) loadAvatar(URL.createObjectURL(f)); });
+
+async function loadPortrait(cfg) {
+  try { await avatars.portrait.load('models/' + cfg.image + '?v=' + Date.now(), cfg.points); use('portrait'); }
+  catch (e) { ui.activity.textContent = 'تعذّر تحميل صورة الشخصية: ' + e.message; loadVrm('models/default.vrm'); }
+}
+
+async function loadSaved() {
+  try {
+    const r = await fetch('models/portrait.json', { cache: 'no-store' });
+    if (r.ok) { const cfg = await r.json(); if (cfg.enabled !== false) return loadPortrait(cfg); }
+  } catch {}
+  loadVrm('models/default.vrm');
+}
+loadSaved();
+
+const upload = (kind, file, ext) => fetch(`/api/avatar?kind=${kind}&ext=${ext}`, { method: 'POST', body: file });
+
+async function takeFile(f) {
+  if (!f) return;
+  const name = f.name.toLowerCase();
+  if (name.endsWith('.vrm')) {
+    await loadVrm(URL.createObjectURL(f));
+    upload('vrm', f, 'vrm'); // keep it for next launch
+  } else if (/\.(png|jpe?g|webp)$/.test(name)) {
+    const ext = name.split('.').pop().replace('jpeg', 'jpg');
+    const points = await calibrate(URL.createObjectURL(f));
+    if (!points) return;
+    const r = await upload('portrait', f, ext);
+    const cfg = await r.json();
+    if (cfg.error) { ui.activity.textContent = cfg.error; return; }
+    await fetch('/api/portrait', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: cfg.image, points }) });
+    loadPortrait({ image: cfg.image, points });
+  }
+}
+ui.file.addEventListener('change', () => { takeFile(ui.file.files[0]); ui.file.value = ''; });
 document.addEventListener('dragover', (e) => e.preventDefault());
-document.addEventListener('drop', (e) => {
-  e.preventDefault();
-  const f = [...e.dataTransfer.files].find((x) => x.name.toLowerCase().endsWith('.vrm'));
-  if (f) loadAvatar(URL.createObjectURL(f));
+document.addEventListener('drop', (e) => { e.preventDefault(); takeFile(e.dataTransfer.files[0]); });
+ui.calib.addEventListener('click', async () => {
+  const cfg = await (await fetch('models/portrait.json', { cache: 'no-store' })).json();
+  const points = await calibrate('models/' + cfg.image);
+  if (!points) return;
+  await fetch('/api/portrait', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: cfg.image, points }) });
+  loadPortrait({ image: cfg.image, points });
 });
+
+// Calibration: the user clicks 5 points on the character image once.
+const STEPS = [
+  ['eyeA', 'منتصف العين الأولى (على يسار الصورة)'], ['eyeB', 'منتصف العين الثانية'],
+  ['mouth', 'منتصف الفم (الخط بين الشفتين)'], ['chin', 'أسفل الذقن'], ['top', 'أعلى الرأس (أعلى الشعر)'],
+];
+function calibrate(url) {
+  return new Promise((resolve) => {
+    const box = $('calibrate'), img = $('calibImg'), tip = $('calibTip'), dots = $('calibDots');
+    const points = {}; let i = 0;
+    dots.innerHTML = '';
+    const show = () => { tip.textContent = `(${i + 1}/${STEPS.length}) اضغط على: ${STEPS[i][1]} — Esc للإلغاء`; };
+    const done = (val) => { box.hidden = true; img.onclick = null; window.removeEventListener('keydown', esc); resolve(val); };
+    const esc = (e) => { if (e.key === 'Escape') done(null); };
+    window.addEventListener('keydown', esc);
+    img.onload = () => { box.hidden = false; show(); };
+    img.src = url;
+    img.onclick = (e) => {
+      const rc = img.getBoundingClientRect();
+      const x = ((e.clientX - rc.left) / rc.width) * img.naturalWidth, y = ((e.clientY - rc.top) / rc.height) * img.naturalHeight;
+      points[STEPS[i][0]] = [Math.round(x), Math.round(y)];
+      const d = document.createElement('i');
+      d.style.left = e.clientX - rc.left + 'px'; d.style.top = e.clientY - rc.top + 'px';
+      dots.appendChild(d);
+      if (++i === STEPS.length) done(points); else show();
+    };
+  });
+}
 
 // ------------------------------------------------------------ Speech output (TTS queue)
 const speech = { queue: [], playing: null, buffer: '', gen: 0 };
@@ -152,7 +229,7 @@ async function startAudio() {
   analyser.smoothingTimeConstant = 0.5;
   outGain = ctx.createGain();
   analyser.connect(outGain).connect(ctx.destination);
-  avatar.attachAudio(analyser);
+  lip.attach(analyser);
 
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
   micNode = ctx.createMediaStreamSource(stream);
@@ -293,4 +370,4 @@ async function refreshStatus() {
 }
 refreshStatus();
 setState('idle');
-window.__cavatar = { ask, avatar, feedText, get state() { return state; } };
+window.__cavatar = { ask, avatars, lip, use, get avatar() { return avatar; }, feedText, get state() { return state; } };

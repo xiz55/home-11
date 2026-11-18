@@ -433,7 +433,9 @@ def stop_claude():
 
 MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
         ".css": "text/css; charset=utf-8", ".vrm": "application/octet-stream", ".json": "application/json",
-        ".png": "image/png", ".svg": "image/svg+xml"}
+        ".png": "image/png", ".svg": "image/svg+xml", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".webp": "image/webp"}
+MODELS = os.path.join(WEB, "models")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -517,6 +519,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/chat":
                 return self._chat(json.loads(self._body() or b"{}").get("text", "").strip())
+            if path == "/api/avatar":
+                return self._save_avatar()
+            if path == "/api/portrait":
+                return self._save_rig(json.loads(self._body() or b"{}"))
             if path == "/api/stop":
                 return self._json({"stopped": stop_claude()})
             if path == "/api/reset":
@@ -531,6 +537,49 @@ class Handler(BaseHTTPRequestHandler):
             log("ERROR", path, repr(e))
             return self._json({"error": str(e)}, 500)
         self.send_error(404)
+
+    def _save_avatar(self):
+        """Persist an uploaded character so it is used on the next launch too."""
+        from urllib.parse import parse_qs, urlparse
+        q = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+        kind, ext = q.get("kind"), q.get("ext", "")
+        n = int(self.headers.get("Content-Length") or 0)
+        if n > 80 * 1024 * 1024:
+            return self._json({"error": "الملف كبير جدًا"}, 413)
+        os.makedirs(MODELS, exist_ok=True)
+        if kind == "vrm":
+            name = "default.vrm"
+        elif kind == "portrait" and ext in ("png", "jpg", "webp"):
+            name = "portrait." + ext
+        else:
+            return self._json({"error": "نوع ملف غير مدعوم"}, 400)
+        tmp = os.path.join(MODELS, "." + name + ".part")
+        with open(tmp, "wb") as f:
+            f.write(self._body())
+        os.replace(tmp, os.path.join(MODELS, name))
+        if kind == "vrm":
+            self._save_rig(None, disable=True, reply=False)
+        log("AVATAR: saved", name)
+        return self._json({"image": name})
+
+    def _save_rig(self, data, disable=False, reply=True):
+        path = os.path.join(MODELS, "portrait.json")
+        if disable:
+            if os.path.exists(path):
+                with open(path, encoding="utf-8") as f:
+                    cfg = json.load(f)
+                cfg["enabled"] = False
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(cfg, f, ensure_ascii=False, indent=1)
+            return None
+        pts = data.get("points") or {}
+        image = os.path.basename(data.get("image", ""))
+        if not os.path.isfile(os.path.join(MODELS, image)) or \
+                sorted(pts) != ["chin", "eyeA", "eyeB", "mouth", "top"]:
+            return self._json({"error": "بيانات المعايرة غير مكتملة"}, 400)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"enabled": True, "image": image, "points": pts}, f, ensure_ascii=False, indent=1)
+        return self._json({"ok": True}) if reply else None
 
     def _chat(self, text):
         if not text:
