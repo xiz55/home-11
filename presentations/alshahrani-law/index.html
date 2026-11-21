@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>الشهراني للمحاماة</title>
+<meta name="description" content="مكتب المحامي محمد إبراهيم الشهراني للمحاماة والاستشارات القانونية — من أوائل المكاتب التي تُدار بالذكاء الاصطناعي.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600&family=Bodoni+Moda:opsz,wght@6..96,400;6..96,600&display=swap" rel="stylesheet">
+<style>
+/* ===================== TOKENS ===================== */
+:root{
+  --ink:#0a0b0d;
+  --ink-2:#111317;
+  --ink-3:#181b20;
+  --ivory:#efe9dd;
+  --muted:#8f8b82;
+  --dim:rgba(239,233,221,.14);
+  --line:rgba(239,233,221,.10);
+  --brass:#c9a45c;
+  --brass-2:#ead29a;
+  --serif:"Amiri", serif;
+  --sans:"IBM Plex Sans Arabic", sans-serif;
+  --num:"Bodoni Moda", serif;
+  --ease:cubic-bezier(.2,.7,.1,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:var(--ink);-webkit-text-size-adjust:100%}
+body{background:var(--ink);color:var(--ivory);font-family:var(--sans);font-weight:400;line-height:1.7;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+::selection{background:var(--brass);color:var(--ink)}
+
+/* film grain over everything */
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:100;opacity:.07;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+/* ===================== CHROME (header + progress) ===================== */
+.progress{position:fixed;top:0;right:0;height:2px;width:100%;transform-origin:right;transform:scaleX(var(--doc,0));background:linear-gradient(270deg,var(--brass),var(--brass-2));z-index:60}
+.topbar{position:fixed;top:0;inset-inline:0;z-index:50;display:flex;justify-content:space-between;align-items:center;padding:18px clamp(16px,4vw,48px);
+  background:rgba(10,11,13,.72);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-bottom:1px solid var(--line);opacity:0;transform:translateY(-10px);transition:opacity .6s var(--ease),transform .6s var(--ease)}
+body.past-hero .topbar{opacity:1;transform:none}
+.brand{font-family:var(--serif);font-size:20px;letter-spacing:0;display:flex;gap:12px;align-items:center}
+.brand i{width:8px;height:8px;border:1px solid var(--brass);transform:rotate(45deg);display:inline-block}
+.brand small{font-family:var(--sans);font-size:12px;color:var(--muted);font-weight:300}
+.topbar a{color:var(--ivory);text-decoration:none;font-size:13px;border:1px solid var(--dim);padding:8px 18px;border-radius:99px;transition:.3s}
+.topbar a:hover{border-color:var(--brass);color:var(--brass-2)}
+
+/* ===================== SCENE PRIMITIVES ===================== */
+.scene{position:relative;--p:0}
+.sticky{position:sticky;top:0;height:100vh;height:100svh;overflow:hidden;display:grid;place-items:center}
+.eyebrow{font-size:13px;letter-spacing:.02em;color:var(--brass);font-weight:500;display:inline-flex;align-items:center;gap:12px}
+.eyebrow::before{content:"";width:28px;height:1px;background:currentColor}
+
+/* ===================== 1. HERO ===================== */
+.hero{height:230vh}
+.hero .sticky{background:radial-gradient(ellipse 60% 50% at 50% 55%,rgba(201,164,92,calc(.10 + var(--p)*.12)),transparent 70%)}
+.seal{position:absolute;width:min(78vmin,640px);aspect-ratio:1;
+  transform:scale(calc(.62 + var(--p)*1.9)) rotate(calc(var(--p)*60deg));
+  opacity:calc(.55 - var(--p)*.25)}
+.seal .spin{transform-origin:300px 300px;animation:spin 90s linear infinite}
+@keyframes spin{to{transform:rotate(-360deg)}}
+.hero-copy{position:relative;text-align:center;padding:0 16px;
+  opacity:calc(1 - var(--p)*2.4);
+  transform:translateY(calc(var(--p)*-90px)) scale(calc(1 - var(--p)*.12));
+  filter:blur(calc(var(--p)*12px))}
+.hero-copy > *{opacity:0;transform:translateY(24px);transition:opacity 1.2s var(--ease),transform 1.2s var(--ease)}
+body.loaded .hero-copy > *{opacity:1;transform:none}
+body.loaded .hero-copy > *:nth-child(2){transition-delay:.15s}
+body.loaded .hero-copy > *:nth-child(3){transition-delay:.3s}
+body.loaded .hero-copy > *:nth-child(4){transition-delay:.55s}
+.hero h1{font-family:var(--serif);font-weight:700;font-size:clamp(44px,8.4vw,128px);line-height:1.15;margin:18px 0 6px;
+  background:linear-gradient(180deg,#fff7e6 0%,var(--ivory) 45%,#b9ab90 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero .sub{font-family:var(--serif);font-size:clamp(20px,2.6vw,34px);color:var(--brass-2)}
+.hero .tag{margin-top:34px;font-size:clamp(14px,1.3vw,17px);color:var(--muted);font-weight:300}
+.scroll-cue{position:absolute;bottom:34px;inset-inline:0;text-align:center;font-size:12px;color:var(--muted);opacity:calc(1 - var(--p)*5)}
+.scroll-cue::after{content:"";display:block;width:1px;height:46px;margin:12px auto 0;background:linear-gradient(var(--brass),transparent);animation:drip 2.2s var(--ease) infinite}
+@keyframes drip{0%{transform:scaleY(0);transform-origin:top}50%{transform:scaleY(1);transform-origin:top}51%{transform-origin:bottom}100%{transform:scaleY(0);transform-origin:bottom}}
+
+/* ===================== 2. STATEMENT (word-by-word light-up) ===================== */
+.statement{height:280vh}
+.statement .sticky{padding:0 clamp(16px,8vw,140px)}
+.words{font-family:var(--serif);font-size:clamp(30px,5vw,76px);line-height:1.45;max-width:1200px;text-align:center}
+.words .w{color:var(--dim);transition:color .5s var(--ease),text-shadow .5s}
+.words .w.lit{color:var(--ivory)}
+.words em{font-style:normal}
+.words em .w.lit{color:var(--brass-2);text-shadow:0 0 40px rgba(234,210,154,.35)}
+
+/* ===================== 3. THE ZEROS (pinned counter) ===================== */
+.zeros{height:760vh}
+.zeros .sticky{grid-template-columns:1fr 1fr;align-items:center;gap:4vw;padding:0 clamp(16px,7vw,120px);
+  background:radial-gradient(circle at 75% 50%,rgba(201,164,92,.07),transparent 55%)}
+.zero-stage{position:relative;width:min(40vw,560px);aspect-ratio:1;display:grid;place-items:center;justify-self:center}
+.zero-ring{position:absolute;inset:0;transform:rotate(-90deg)}
+.zero-ring circle{fill:none;stroke-width:1}
+.zero-ring .track{stroke:var(--line)}
+.zero-ring .bar{stroke:var(--brass);stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:calc(1 - var(--p));transition:stroke-dashoffset .1s}
+.zero-ring .ticks line{stroke:var(--dim)}
+.digit{height:1em;overflow:hidden;font-family:var(--num);font-weight:400;font-size:min(30vw,420px);line-height:1;direction:ltr;color:var(--ivory);transition:color .6s,text-shadow .6s}
+.digit .strip{display:flex;flex-direction:column;will-change:transform}
+.digit .strip span{height:1em;display:block;text-align:center}
+.zeros.locked .digit{color:var(--brass-2);text-shadow:0 0 80px rgba(234,210,154,.35)}
+.zero-copy{position:relative;min-height:360px}
+.zero-copy .eyebrow{margin-bottom:22px}
+.zero-copy .lead{font-family:var(--serif);font-size:clamp(22px,2.2vw,32px);color:var(--muted);margin-bottom:26px}
+.zero-copy .lead b{color:var(--ivory);font-weight:700}
+.cap{position:absolute;inset-inline:0;top:150px;opacity:0;transform:translateY(30px);filter:blur(6px);transition:opacity .7s var(--ease),transform .7s var(--ease),filter .7s var(--ease);pointer-events:none}
+.cap.on{opacity:1;transform:none;filter:none}
+.cap.gone{transform:translateY(-30px)}
+.cap h3{font-family:var(--serif);font-size:clamp(30px,3.6vw,54px);line-height:1.3;font-weight:700}
+.cap h3 span{color:var(--brass-2);font-family:var(--num);font-weight:400;margin-inline-end:.25em}
+.cap p{margin-top:16px;font-size:clamp(15px,1.25vw,19px);color:#bdb7ab;max-width:520px;font-weight:300}
+.zero-count{position:absolute;bottom:40px;inset-inline-start:clamp(16px,7vw,120px);font-family:var(--num);font-size:14px;color:var(--muted);direction:ltr;letter-spacing:.2em}
+.zero-dots{position:absolute;bottom:44px;inset-inline-end:clamp(16px,7vw,120px);display:flex;gap:8px}
+.zero-dots i{width:22px;height:2px;background:var(--line);transition:background .4s}
+.zero-dots i.on{background:var(--brass)}
+
+/* ===================== 4. PROCESS (horizontal pinned track) ===================== */
+.process{height:480vh}
+.process .sticky{display:block}
+.process-head{position:absolute;top:13vh;inset-inline-start:clamp(16px,7vw,120px);max-width:760px}
+.process-head h2{font-family:var(--serif);font-size:clamp(34px,4.6vw,70px);line-height:1.25;margin-top:14px}
+.process-head h2 em{font-style:normal;color:var(--brass-2)}
+.rail{position:absolute;right:0;top:46vh;display:flex;gap:28px;width:max-content;padding-inline:clamp(16px,7vw,120px);will-change:transform}
+.step{width:min(420px,78vw);min-height:270px;padding:34px 32px;border:1px solid var(--line);border-radius:22px;
+  background:linear-gradient(160deg,var(--ink-3),var(--ink-2));position:relative;overflow:hidden}
+.step::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 100% 0%,rgba(201,164,92,.16),transparent 55%);opacity:.0;transition:opacity .5s}
+.step.near::before{opacity:1}
+.step .n{font-family:var(--num);font-size:64px;line-height:1;color:var(--brass);opacity:.85;direction:ltr;text-align:left}
+.step h3{font-family:var(--serif);font-size:30px;margin:26px 0 8px}
+.step p{color:#b5afa3;font-weight:300;font-size:16px}
+.step .who{position:absolute;top:34px;inset-inline-start:32px;font-size:12px;padding:4px 12px;border-radius:99px;border:1px solid var(--dim);color:var(--muted)}
+.step.human .who{border-color:var(--brass);color:var(--brass-2)}
+.track-line{position:absolute;bottom:12vh;inset-inline:clamp(16px,7vw,120px);height:1px;background:var(--line)}
+.track-line i{position:absolute;inset-block:0;right:0;width:100%;transform-origin:right;transform:scaleX(var(--p));background:var(--brass)}
+
+/* ===================== 5. SERVICES ===================== */
+.services{padding:22vh clamp(16px,7vw,120px) 16vh;background:linear-gradient(var(--ink),var(--ink-2) 30%,var(--ink-2) 70%,var(--ink))}
+.svc-wrap{display:grid;grid-template-columns:minmax(260px,.8fr) 1.6fr;gap:6vw;max-width:1400px;margin:0 auto}
+.svc-head{position:sticky;top:18vh;align-self:start}
+.svc-head h2{font-family:var(--serif);font-size:clamp(36px,4.2vw,64px);line-height:1.25;margin:16px 0 18px}
+.svc-head p{color:var(--muted);font-weight:300;max-width:380px}
+.svc-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.svc{padding:30px 28px 32px;border:1px solid var(--line);border-radius:20px;background:rgba(255,255,255,.012);
+  opacity:0;transform:translateY(60px) scale(.97);transition:opacity 1s var(--ease),transform 1s var(--ease),border-color .4s,background .4s}
+.svc.in{opacity:1;transform:none}
+.svc:nth-child(even){transition-delay:.12s}
+.svc:hover{border-color:rgba(201,164,92,.45);background:rgba(201,164,92,.04)}
+.svc .ic{width:42px;height:42px;color:var(--brass);margin-bottom:22px}
+.svc h3{font-family:var(--serif);font-size:25px;line-height:1.35;margin-bottom:8px}
+.svc p{color:#aaa497;font-weight:300;font-size:15.5px}
+
+/* ===================== 6. PROMISE (scale-in statement) ===================== */
+.promise{height:240vh}
+.promise .sticky{text-align:center;padding:0 16px}
+.promise .l1{font-family:var(--serif);font-size:clamp(32px,5.4vw,84px);line-height:1.3;
+  transform:scale(calc(1.5 - var(--p)*.5));opacity:calc(var(--p)*3);filter:blur(calc((1 - min(1, var(--p)*3))*14px))}
+.promise .l2{font-family:var(--serif);font-size:clamp(26px,3.6vw,56px);line-height:1.4;color:var(--brass-2);margin-top:22px;
+  opacity:calc((var(--p) - .42)*4);transform:translateY(calc((1 - min(1, max(0,(var(--p) - .42)*4)))*40px))}
+.promise .l3{margin-top:30px;color:var(--muted);font-weight:300;opacity:calc((var(--p) - .62)*4)}
+
+/* ===================== 7. CLOSING ===================== */
+.closing{min-height:100vh;display:grid;place-items:center;text-align:center;padding:16vh 16px 10vh;position:relative;overflow:hidden}
+.closing::before{content:"";position:absolute;width:120vmax;height:120vmax;border-radius:50%;left:50%;top:100%;transform:translate(-50%,-50%);
+  background:radial-gradient(circle,rgba(201,164,92,.18),transparent 60%)}
+.closing > div{position:relative}
+.closing h2{font-family:var(--serif);font-size:clamp(40px,6.4vw,104px);line-height:1.2}
+.closing h2 span{font-family:var(--num);color:var(--brass-2)}
+.closing .sub{margin:22px auto 44px;color:var(--muted);max-width:560px;font-weight:300}
+.cta{display:inline-flex;align-items:center;gap:14px;padding:18px 40px;border-radius:99px;background:var(--brass);color:var(--ink);font-weight:600;text-decoration:none;font-size:17px;
+  box-shadow:0 20px 60px -20px rgba(201,164,92,.6);transition:transform .4s var(--ease),box-shadow .4s}
+.cta:hover{transform:translateY(-3px);box-shadow:0 30px 70px -20px rgba(201,164,92,.8)}
+.contact{display:flex;flex-wrap:wrap;justify-content:center;gap:12px 40px;margin-top:64px;color:#bdb7ab;font-size:15px}
+.contact span{color:var(--muted);margin-inline-end:8px;font-size:13px}
+footer{border-top:1px solid var(--line);padding:28px clamp(16px,7vw,120px);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;color:var(--muted);font-size:13px}
+
+/* ===================== RESPONSIVE ===================== */
+@media (max-width:860px){
+  .zeros .sticky{grid-template-columns:1fr;grid-template-rows:auto auto;align-content:center;gap:10px}
+  .zero-stage{width:min(62vw,340px)}
+  .digit{font-size:min(46vw,250px)}
+  .zero-copy{min-height:300px;text-align:center}
+  .zero-copy .lead{margin-bottom:8px;font-size:18px}
+  .cap{top:70px}
+  .cap p{margin-inline:auto}
+  .zero-count{bottom:24px}.zero-dots{bottom:28px}
+  .process-head{top:11vh}
+  .rail{top:40vh}
+  .svc-wrap{grid-template-columns:1fr}
+  .svc-head{position:static}
+  .svc-grid{grid-template-columns:1fr}
+}
+
+/* ===================== REDUCED MOTION ===================== */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .hero-copy,.seal,.promise .l1,.promise .l2,.promise .l3{transform:none!important;filter:none!important;opacity:1!important}
+  .seal{opacity:.3!important}
+  .svc{opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+
+<div class="progress"></div>
+<header class="topbar">
+  <div class="brand"><i></i>الشهراني <small>للمحاماة والاستشارات القانونية</small></div>
+  <a href="#contact">احجز استشارة</a>
+</header>
+
+<!-- ===================== 1. HERO ===================== -->
+<section class="scene hero" data-scene="hero">
+  <div class="sticky">
+    <svg class="seal" viewBox="0 0 600 600" aria-hidden="true">
+      <defs>
+        <path id="ringPath" d="M300,300 m-236,0 a236,236 0 1,1 472,0 a236,236 0 1,1 -472,0"/>
+      </defs>
+      <g class="spin">
+        <circle cx="300" cy="300" r="292" fill="none" stroke="#c9a45c" stroke-opacity=".35"/>
+        <circle cx="300" cy="300" r="272" fill="none" stroke="#c9a45c" stroke-opacity=".55"/>
+        <g id="ticks"></g>
+        <text font-family="Amiri, serif" font-size="25" fill="#c9a45c" fill-opacity=".9">
+          <textPath href="#ringPath">محمد إبراهيم الشهراني ✦ للمحاماة والاستشارات القانونية ✦ محمد إبراهيم الشهراني ✦ للمحاماة والاستشارات القانونية ✦</textPath>
+        </text>
+        <circle cx="300" cy="300" r="205" fill="none" stroke="#c9a45c" stroke-opacity=".3" stroke-dasharray="2 7"/>
+      </g>
+      <!-- balance -->
+      <g fill="none" stroke="#ead29a" stroke-width="1.6" stroke-linecap="round" opacity=".9">
+        <line x1="300" y1="200" x2="300" y2="398"/>
+        <line x1="210" y1="232" x2="390" y2="232"/>
+        <circle cx="300" cy="196" r="6"/>
+        <line x1="222" y1="232" x2="196" y2="304"/><line x1="222" y1="232" x2="248" y2="304"/>
+        <line x1="378" y1="232" x2="352" y2="304"/><line x1="378" y1="232" x2="404" y2="304"/>
+        <path d="M190 304 Q222 336 254 304 Z"/>
+        <path d="M346 304 Q378 336 410 304 Z"/>
+        <path d="M262 398 L338 398 L326 384 L274 384 Z"/>
+      </g>
+    </svg>
+
+    <div class="hero-copy">
+      <p class="eyebrow">مكتب المحامي</p>
+      <h1>محمد إبراهيم الشهراني</h1>
+      <p class="sub">للمحاماة والاستشارات القانونية</p>
+      <p class="tag">العدالة بدقّة الآلة… وحكمة المحامي</p>
+    </div>
+    <div class="scroll-cue">مرّر للأسفل</div>
+  </div>
+</section>
+
+<!-- ===================== 2. STATEMENT ===================== -->
+<section class="scene statement" data-scene="statement">
+  <div class="sticky">
+    <p class="words" data-words>نحن من أوائل مكاتب المحاماة التي <em>تُدار بالذكاء الاصطناعي</em> — لا لنستبدل المحامي، بل لنُغلق كل بابٍ <em>يتسرّب منه الخطر</em> إلى قضيتك.</p>
+  </div>
+</section>
+
+<!-- ===================== 3. ZEROS ===================== -->
+<section class="scene zeros" data-scene="zeros">
+  <div class="sticky">
+    <div class="zero-stage">
+      <svg class="zero-ring" viewBox="0 0 200 200" aria-hidden="true">
+        <g class="ticks" id="ringTicks"></g>
+        <circle class="track" cx="100" cy="100" r="92"/>
+        <circle class="bar" cx="100" cy="100" r="92" pathLength="1"/>
+      </svg>
+      <div class="digit" aria-hidden="true"><div class="strip"><span>9</span><span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span><span>0</span></div></div>
+    </div>
+
+    <div class="zero-copy">
+      <p class="eyebrow">معيارنا الوحيد</p>
+      <p class="lead">في مكتبنا، الرقم المقبول للخطأ هو <b>الصفر</b>.</p>
+
+      <div class="cap"><h3><span>0</span>تأخير في حضور الجلسات</h3><p>تقويمٌ ذكي يرصد موعد كل جلسة فور قيده، ويُنبّه الفريق على مراحل متتالية حتى لحظة الحضور.</p></div>
+      <div class="cap"><h3><span>0</span>تأخير في المواعيد ومراجعة الدوائر الحكومية</h3><p>جدولةٌ آلية للمراجعات والمعاملات، وتتبّعٌ لحالة كل معاملة خطوةً بخطوة حتى إنجازها.</p></div>
+      <div class="cap"><h3><span>0</span>ثغرات في العقود وحوكمتها</h3><p>تحليل كل بند ومطابقته مع الأنظمة السارية ومكتبة بنودٍ معتمدة، مع سجلّ حوكمة لكل نسخة وتعديل.</p></div>
+      <div class="cap"><h3><span>0</span>مهلة نظامية فائتة</h3><p>مُدد الاعتراض والاستئناف والتظلّم تُحتسب آليًا من تاريخ التبليغ — ولا تُترك للذاكرة.</p></div>
+      <div class="cap"><h3><span>0</span>مستند مفقود</h3><p>أرشيفٌ رقمي مُشفّر لكل ملف، يُستدعى منه أي مستند خلال ثوانٍ، في أي وقت.</p></div>
+      <div class="cap"><h3><span>0</span>تعارض مصالح غير مكتشف</h3><p>فحصٌ آلي لكل موكّل وكل خصم قبل قبول أي قضية، حمايةً لك ولسرّية ملفك.</p></div>
+      <div class="cap"><h3><span>0</span>موكّل ينتظر خبرًا عن قضيته</h3><p>تقارير دورية بمستجدات قضيتك تصلك تلقائيًا — متابعةٌ لا تنتظر اتصالك.</p></div>
+    </div>
+
+    <div class="zero-count"><b class="ci">01</b> / 07</div>
+    <div class="zero-dots"></div>
+  </div>
+</section>
+
+<!-- ===================== 4. PROCESS ===================== -->
+<section class="scene process" data-scene="process">
+  <div class="sticky">
+    <div class="process-head">
+      <p class="eyebrow">كيف نعمل</p>
+      <h2>الآلة <em>ترصد</em>. المحامي <em>يقرّر</em>.</h2>
+    </div>
+    <div class="rail">
+      <article class="step"><span class="who">الذكاء الاصطناعي</span><div class="n">01</div><h3>الرصد</h3><p>كل موعد ومهلة ومستند يدخل النظام لحظة وروده، فلا شيء يعتمد على التذكّر.</p></article>
+      <article class="step"><span class="who">الذكاء الاصطناعي</span><div class="n">02</div><h3>التحليل</h3><p>قراءة المستندات والعقود واستخراج المخاطر والمدد والالتزامات في دقائق بدل أيام.</p></article>
+      <article class="step"><span class="who">الذكاء الاصطناعي</span><div class="n">03</div><h3>التنبيه</h3><p>تنبيهات مبكرة ومتدرّجة للفريق قبل كل استحقاق، مع تصعيد تلقائي عند الحاجة.</p></article>
+      <article class="step human"><span class="who">المحامي</span><div class="n">04</div><h3>المراجعة والقرار</h3><p>كل مخرَج يمرّ على محامٍ مختص يراجعه ويعتمده. القرار القانوني قرارٌ بشري، دائمًا.</p></article>
+      <article class="step human"><span class="who">المحامي</span><div class="n">05</div><h3>التنفيذ والتوثيق</h3><p>الترافع والتمثيل والتفاوض بخبرة المحامي، وتوثيق كل خطوة في ملفك أولًا بأول.</p></article>
+    </div>
+    <div class="track-line"><i></i></div>
+  </div>
+</section>
+
+<!-- ===================== 5. SERVICES ===================== -->
+<section class="services" id="services">
+  <div class="svc-wrap">
+    <header class="svc-head">
+      <p class="eyebrow">خدماتنا</p>
+      <h2>كل ما تحتاجه قانونيًا، تحت سقفٍ واحد.</h2>
+      <p>للأفراد والشركات، بالمنهج نفسه: خبرةٌ قانونية يقودها محامٍ، ونظامٌ ذكي لا يغفل عن تفصيل.</p>
+    </header>
+    <div class="svc-grid">
+      <article class="svc"><svg class="ic" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 40h32M12 40V20M20 40V20M28 40V20M36 40V20M6 20h36L24 8z"/></svg><h3>التقاضي والترافع</h3><p>تمثيلك أمام المحاكم العامة والتجارية والعمالية والجزائية ومحاكم الاستئناف.</p></article>
+      <article class="svc"><svg class="ic" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 6h18l8 8v28H12z"/><path d="M30 6v8h8M18 22h14M18 28h14M18 34h8"/></svg><h3>صياغة العقود ومراجعتها وحوكمتها</h3><p>عقودٌ محكمة البنود، ومراجعة تكشف المخاطر، وسجلّ حوكمة يحفظ كل نسخة.</p></article>
+      <article class="svc"><svg class="ic" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 42V16l16-8 16 8v26"/><path d="M18 42V28h12v14M8 42h32"/></svg><h3>تأسيس الشركات والحوكمة</h3><p>عقود التأسيس والأنظمة الأساس ولوائح الحوكمة، وهيكلة الشراكات.</p></article>
+      <article class="svc"><svg class="ic" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="18" cy="16" r="6"/><circle cx="32" cy="16" r="6"/><path d="M6 40c0-7 5-12 12-12s12 5 12 12M24 30c2-1.4 4.8-2 8-2 7 0 10 5 10 12"/></svg><h3>القضايا العمالية</h3><p>للمنشآت والعاملين: العقود، والمستحقات، والنزاعات أمام المحاكم العمالية.</p></article>
+      <article class="svc"><svg class="ic" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M24 40S8 30 8 18a8 8 0 0 1 16-2 8 8 0 0 1 16 2c0 12-16 22-16 22z"/></svg><h3>الأحوال الشخصية</h3><p>قضايا الأسرة والحضانة والنفقة والتركات، بسرّيةٍ تامة وإنسانية.</p></article>
+      <article class="svc"><svg class="ic" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 22 24 8l18 14M10 19v23h28V19"/><path d="M20 42V30h8v12"/></svg><h3>القضايا العقارية</h3><p>نزاعات الملكية والإيجار والمقاولات، وتوثيق الصفقات العقارية.</p></article>
+      <article class="svc"><svg class="ic" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 26l8-8 8 4 8-4 8 8-12 12z"/><path d="M16 18 12 14M32 18l4-4"/></svg><h3>التحكيم والتسوية الودية</h3><p>حلول أسرع وأقل كلفة من التقاضي، بصياغة اتفاقات تحفظ حقوقك.</p></article>
+      <article class="svc"><svg class="ic" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 34h32M12 34V22h24v12M18 22v-8h12v8"/><path d="M24 6v8"/></svg><h3>التنفيذ وتحصيل الحقوق</h3><p>متابعة طلبات التنفيذ واسترداد المستحقات حتى تصل حقوقك إليك.</p></article>
+      <article class="svc"><svg class="ic" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="24" cy="24" r="16"/><path d="M28 18h-6a4 4 0 0 0 0 8h4a4 4 0 0 1 0 8h-6M24 14v4M24 34v4"/></svg><h3>الملكية الفكرية</h3><p>حماية العلامات التجارية وحقوق المؤلف، ومواجهة التعدّي عليها.</p></article>
+      <article class="svc"><svg class="ic" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 10h32v22H22l-8 7v-7H8z"/><path d="M16 19h16M16 25h10"/></svg><h3>الاستشارات القانونية</h3><p>للأفراد والشركات، حضوريًا أو عن بُعد، بإجابات واضحة وخطوات عملية.</p></article>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== 6. PROMISE ===================== -->
+<section class="scene promise" data-scene="promise">
+  <div class="sticky">
+    <div>
+      <p class="l1">الذكاء الاصطناعي لا يقف أمام القاضي.</p>
+      <p class="l2">محاميك يفعل — وخلفه نظامٌ لا ينسى.</p>
+      <p class="l3">التقنية تُنذر وتحلّل، والقرار القانوني يبقى بيد محامٍ يعرف قضيتك.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== 7. CLOSING ===================== -->
+<section class="closing" id="contact">
+  <div>
+    <p class="eyebrow">ابدأ الآن</p>
+    <h2 style="margin-top:18px">قضيتك تستحق <span>0</span> أخطاء.</h2>
+    <p class="sub">احجز استشارتك الأولى، ودعنا نُريك كيف تُدار القضايا حين لا يُترك شيءٌ للصدفة.</p>
+    <a class="cta" href="#contact">احجز استشارتك ←</a>
+    <div class="contact">
+      <div><span>الهاتف</span>[رقم التواصل]</div>
+      <div><span>البريد</span>[البريد الإلكتروني]</div>
+      <div><span>العنوان</span>[المدينة — الحي]</div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div>مكتب المحامي محمد إبراهيم الشهراني للمحاماة والاستشارات القانونية</div>
+  <div>جميع الحقوق محفوظة</div>
+</footer>
+
+<script>
+/* ===================== SETUP ===================== */
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const NS = 'http://www.w3.org/2000/svg';
+
+  // seal ticks
+  const ticks = document.getElementById('ticks');
+  for (let i = 0; i < 120; i++) {
+    const l = document.createElementNS(NS, 'line');
+    const long = i % 10 === 0;
+    l.setAttribute('x1', 300); l.setAttribute('x2', 300);
+    l.setAttribute('y1', 30); l.setAttribute('y2', long ? 44 : 37);
+    l.setAttribute('stroke', '#c9a45c'); l.setAttribute('stroke-opacity', long ? .8 : .35);
+    l.setAttribute('transform', `rotate(${i * 3} 300 300)`);
+    ticks.appendChild(l);
+  }
+  // counter ring ticks
+  const rt = document.getElementById('ringTicks');
+  for (let i = 0; i < 60; i++) {
+    const l = document.createElementNS(NS, 'line');
+    l.setAttribute('x1', 100); l.setAttribute('x2', 100);
+    l.setAttribute('y1', 1); l.setAttribute('y2', i % 5 ? 3 : 5);
+    l.setAttribute('transform', `rotate(${i * 6} 100 100)`);
+    rt.appendChild(l);
+  }
+
+  // split statement into words (keeps <em> accents)
+  const words = [];
+  const split = (node) => {
+    [...node.childNodes].forEach(c => {
+      if (c.nodeType === 3) {
+        const frag = document.createDocumentFragment();
+        c.textContent.split(/(\s+)/).forEach(t => {
+          if (!t) return;
+          if (/^\s+$/.test(t)) { frag.appendChild(document.createTextNode(t)); return; }
+          const s = document.createElement('span'); s.className = 'w'; s.textContent = t;
+          frag.appendChild(s); words.push(s);
+        });
+        c.replaceWith(frag);
+      } else split(c);
+    });
+  };
+  split(document.querySelector('[data-words]'));
+
+  // zeros
+  const zeros = document.querySelector('.zeros');
+  const caps = [...zeros.querySelectorAll('.cap')];
+  const strip = zeros.querySelector('.strip');
+  const ci = zeros.querySelector('.ci');
+  const dotsBox = zeros.querySelector('.zero-dots');
+  caps.forEach(() => dotsBox.appendChild(document.createElement('i')));
+  const dots = [...dotsBox.children];
+  let lastIdx = -1;
+
+  // process
+  const track = document.querySelector('.rail');
+  const steps = [...track.children];
+
+  /* ===================== SCENE HANDLERS ===================== */
+  const easeOut = t => 1 - Math.pow(1 - t, 3);
+  const handlers = {
+    statement(s, p) {
+      const n = words.length;
+      words.forEach((w, i) => w.classList.toggle('lit', i / n < p * 1.25 - 0.08));
+    },
+    zeros(s, p) {
+      const n = caps.length;
+      const x = Math.min(n - 0.0001, p * n);
+      const idx = Math.floor(x);
+      const t = x - idx;
+      const k = easeOut(Math.min(1, t / 0.45));
+      strip.style.transform = `translateY(${-k * 9}em)`;
+      s.classList.toggle('locked', k > 0.995);
+      if (idx !== lastIdx) {
+        caps.forEach((c, i) => { c.classList.toggle('on', i === idx); c.classList.toggle('gone', i < idx); });
+        dots.forEach((d, i) => d.classList.toggle('on', i <= idx));
+        ci.textContent = String(idx + 1).padStart(2, '0');
+        lastIdx = idx;
+      }
+    },
+    process(s, p) {
+      const max = Math.max(0, track.scrollWidth - innerWidth);
+      track.style.transform = `translateX(${easeOut(p) * max}px)`;
+      const mid = innerWidth / 2;
+      steps.forEach(st => {
+        const r = st.getBoundingClientRect();
+        st.classList.toggle('near', Math.abs(r.left + r.width / 2 - mid) < r.width * .7);
+      });
+    }
+  };
+
+  /* ===================== SCROLL LOOP ===================== */
+  const scenes = [...document.querySelectorAll('[data-scene]')];
+  const hero = document.querySelector('.hero');
+  const root = document.documentElement;
+  let ticking = false;
+  function update() {
+    ticking = false;
+    const vh = innerHeight;
+    for (const s of scenes) {
+      const r = s.getBoundingClientRect();
+      if (r.bottom < -vh || r.top > vh * 2) continue;
+      const total = s.offsetHeight - vh;
+      const p = total > 0 ? Math.min(1, Math.max(0, -r.top / total)) : 0;
+      s.style.setProperty('--p', p.toFixed(4));
+      handlers[s.dataset.scene]?.(s, p);
+    }
+    const docMax = root.scrollHeight - vh;
+    root.style.setProperty('--doc', (scrollY / docMax).toFixed(4));
+    document.body.classList.toggle('past-hero', hero.getBoundingClientRect().bottom < vh * .9);
+  }
+  const req = () => { if (!ticking) { ticking = true; requestAnimationFrame(update); } };
+  addEventListener('scroll', req, { passive: true });
+  addEventListener('resize', req);
+  update();
+
+  /* ===================== REVEAL ON ENTER ===================== */
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+  }), { threshold: .2 });
+  document.querySelectorAll('.svc').forEach(el => reduce ? el.classList.add('in') : io.observe(el));
+
+  requestAnimationFrame(() => document.body.classList.add('loaded'));
+})();
+</script>
+</body>
+</html>
