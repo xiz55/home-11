@@ -1,0 +1,68 @@
+# بناء برنامج إدارة مكتب المحاماة واختباره على ويندوز فعليًا، ثم رفع ملف التثبيت.
+name: law-office-windows
+
+on:
+  push:
+    branches: [claude/law-office-management-app-fzfje8]
+    paths: ['law-office/**', '.github/workflows/law-office-windows.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: law-office
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: law-office/package-lock.json
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: node scripts/build.mjs
+      - name: Unit and integration tests (Windows)
+        run: npx vitest run
+      - name: Package Windows installer (NSIS x64)
+        run: npx electron-builder --win nsis --x64 --publish never
+      - name: End-to-end acceptance journey on the packaged Windows app
+        shell: pwsh
+        run: |
+          $env:LAWOFFICE_EXEC = "$PWD\release\win-unpacked\LawOfficeManager.exe"
+          $env:LAWOFFICE_MCP_SCRIPT = "$PWD\release\win-unpacked\resources\app.asar.unpacked\dist\mcp\server.js"
+          node --test --test-reporter=spec tests/e2e/journey.e2e.mjs
+      - name: Silent install, launch check and uninstall
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem release\LawOfficeManager-Setup-*-x64.exe | Select-Object -First 1
+          Start-Process $setup.FullName -ArgumentList '/S' -Wait
+          $exe = "$env:LOCALAPPDATA\Programs\LawOfficeManager\LawOfficeManager.exe"
+          if (-not (Test-Path $exe)) { throw "not installed: $exe" }
+          $lnk = Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter *.lnk | Where-Object { $_.Name -like '*مكتب المحاماة*' }
+          if (-not $lnk) { throw 'start menu shortcut missing' }
+          $env:LAWOFFICE_EXEC = $exe
+          $env:LAWOFFICE_MCP_SCRIPT = "$env:LOCALAPPDATA\Programs\LawOfficeManager\resources\app.asar.unpacked\dist\mcp\server.js"
+          node tests/e2e/installed-smoke.mjs
+          $un = Get-ChildItem "$env:LOCALAPPDATA\Programs\LawOfficeManager\Uninstall*.exe" | Select-Object -First 1
+          Start-Process $un.FullName -ArgumentList '/S' -Wait
+      - name: Upload test screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results-windows
+          path: law-office/test-results/e2e/*.png
+          if-no-files-found: ignore
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: LawOfficeManager-Setup-x64
+          path: law-office/release/LawOfficeManager-Setup-*-x64.exe
