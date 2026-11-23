@@ -200,6 +200,19 @@ describe('النسخ الاحتياطي والاستعادة', () => {
     expect(fs.readdirSync(A.core.paths.tmpDir).filter((f) => f.startsWith('restore-'))).toHaveLength(0);
   });
 
+  it('تلف أي جزء من الحزمة (حتى جداول JSON) يُكتشف قبل الاستعادة', async () => {
+    const { unzipSync, zipSync } = await import('fflate');
+    const z = unzipSync(fs.readFileSync(backupFile));
+    const tampered = Buffer.from(z['data/clients.json']).toString().replace('شركة المثال', 'شركة معدلة');
+    z['data/clients.json'] = Buffer.from(tampered);
+    const bad = path.join(out, 'tampered-json.lobk');
+    fs.writeFileSync(bad, zipSync(z));
+    A.platform.openQueue.push(bad);
+    const r = await call(A.core, S, 'backup.inspectRestore', {});
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(' ')).toContain('data/clients.json');
+  });
+
   it('يحمي من اجتياز المسارات داخل الأرشيف', async () => {
     const evil = path.join(out, 'evil.lobk');
     fs.writeFileSync(evil, zipSync({ 'manifest.json': strToU8('{}'), '../../evil.txt': strToU8('pwned'), 'attachments/../../../evil2.txt': strToU8('x') }));

@@ -6,7 +6,7 @@
 
 | المسار داخل الحزمة | الوصف |
 |---|---|
-| `manifest.json` | بيان الحزمة: `format` = `law-office-backup`، `formatVersion`، `appVersion`، `schemaVersion`، `createdAt` (UTC)، `createdBy`، `officeName`، عدد السجلات لكل جدول (`counts`)، بصمة SHA-256 وحجم قاعدة البيانات (`database`) وكل مرفق (`files[]`). |
+| `manifest.json` | بيان الحزمة: `format` = `law-office-backup`، `formatVersion`، `appVersion`، `schemaVersion`، `createdAt` (UTC)، `createdBy`، `officeName`، عدد السجلات لكل جدول (`counts`)، بصمة SHA-256 وحجم قاعدة البيانات (`database`) وكل مرفق (`files[]`) وبقية المحتويات من JSON والملف التعريفي (`extraFiles[]`). |
 | `README.txt` | شرح عربي مختصر للمحتويات. |
 | `database/office.sqlite` | لقطة كاملة ومتسقة من قاعدة SQLite مأخوذة بـ `VACUUM INTO` (تشمل كل ما في ملف WAL). هذا الملف هو مصدر الاستعادة. |
 | `attachments/<xx>/<uuid>.<ext>` | المرفقات بأسمائها الداخلية الآمنة. `<xx>` أول حرفين من الاسم. الاسم الأصلي للملف في `document_versions.original_name`. |
@@ -30,7 +30,7 @@
 قبل استبدال أي بيانات يتحقق البرنامج من:
 1. أن كل مسار داخل الأرشيف ضمن القائمة المسموحة (يرفض `..` والمسارات المطلقة والشرطة المائلة العكسية).
 2. صيغة البيان وإصداره، وأن إصدار بنية القاعدة لا يتجاوز إصدار البرنامج.
-3. تطابق بصمة SHA-256 وحجم قاعدة البيانات وكل مرفق مع البيان.
+3. تطابق بصمة SHA-256 وحجم كل ملف داخل الحزمة (القاعدة والمرفقات وملفات JSON) مع البيان، وعدم وجود ملفات غير مذكورة فيه.
 4. `PRAGMA integrity_check` و`PRAGMA foreign_key_check` على القاعدة المستخرجة، ووجود حساب صاحب المكتب.
 5. أن كل نسخة مستند مسجلة في القاعدة لها ملف في الحزمة ببصمة مطابقة.
 

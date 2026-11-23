@@ -71,6 +71,8 @@ export interface Manifest {
   database: { path: string; size: number; sha256: string };
   files: { path: string; size: number; sha256: string }[];
   jsonTables: string[];
+  /** بصمات بقية محتويات الحزمة (JSON والملف التعريفي) حتى يُكتشف أي تلف في أي جزء */
+  extraFiles: { path: string; size: number; sha256: string }[];
 }
 
 function sha256File(file: string): Promise<string> {
@@ -155,6 +157,11 @@ export async function writePackage(db: Db, paths: AppPaths, dest: string, meta: 
         database: { path: 'database/office.sqlite', size: fs.statSync(snap).size, sha256: '' },
         files,
         jsonTables: jsonFiles.map((j) => j.name),
+        extraFiles: [...jsonFiles.map((j) => ({ path: j.name, buf: j.buf })), { path: 'README.txt', buf: Buffer.from(README, 'utf8') }].map((x) => ({
+          path: x.path,
+          size: x.buf.length,
+          sha256: createHash('sha256').update(x.buf).digest('hex'),
+        })),
       };
       sdb.close();
       manifest.database.sha256 = await sha256File(snap);
@@ -326,6 +333,14 @@ export async function inspectPackageFile(file: string, paths: AppPaths, opts: { 
     const db = hashes.get('database/office.sqlite');
     if (!db) errors.push('الحزمة لا تحتوي قاعدة البيانات.');
     else if (db.sha256 !== m.database?.sha256 || db.size !== m.database?.size) errors.push('بصمة قاعدة البيانات لا تطابق البيان — الحزمة معدلة أو تالفة.');
+    const listed = new Set<string>(['manifest.json', 'database/office.sqlite', ...(m.files ?? []).map((f) => f.path), ...(m.extraFiles ?? []).map((f) => f.path)]);
+    for (const name of hashes.keys()) if (!listed.has(name)) errors.push(`ملف غير مذكور في البيان داخل الحزمة: ${name}`);
+    for (const f of m.extraFiles ?? []) {
+      const got = hashes.get(f.path);
+      if (!got) errors.push(`ملف مذكور في البيان غير موجود في الحزمة: ${f.path}`);
+      else if (got.sha256 !== f.sha256 || got.size !== f.size) errors.push(`بصمة الملف لا تطابق البيان — الحزمة تالفة: ${f.path}`);
+    }
+    if (!Array.isArray(m.extraFiles)) errors.push('البيان لا يتضمن بصمات كل محتويات الحزمة.');
     for (const f of m.files ?? []) {
       const got = hashes.get(f.path);
       if (!got) errors.push(`مرفق مذكور في البيان غير موجود في الحزمة: ${f.path}`);

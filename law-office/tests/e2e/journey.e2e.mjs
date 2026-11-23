@@ -473,9 +473,9 @@ describe('رحلة القبول الكاملة عبر الواجهة', { concurr
     await expectToast(win, /حُفظت الحزمة/);
     assert.ok(fs.existsSync(pkg));
     const corrupt = path.join(OUT, 'corrupt.lobk');
+    // حزمة تالفة: نُسخت ناقصة (انقطاع أثناء النسخ)
     const buf = fs.readFileSync(pkg);
-    buf[Math.floor(buf.length / 2)] ^= 0xff;
-    fs.writeFileSync(corrupt, buf);
+    fs.writeFileSync(corrupt, buf.subarray(0, Math.floor(buf.length * 0.6)));
     await mockOpen(A.app, corrupt);
     await win.getByRole('button', { name: 'استعادة من نسخة' }).click();
     await expectToast(win, /رُفضت الحزمة/);
