@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Archive, ArchiveRestore, Banknote, Briefcase, FilePlus2, FileText, Pencil, Plus, ScrollText, StickyNote, UserPlus, MessageSquare, BarChart3 } from 'lucide-react';
-import { Alert, Badge, Button, Card, DataTable, Empty, ErrorBox, KV, Loading, Select, StatusBadge, Tabs, toast, confirmAsync, Ltr } from '../components/ui';
+import { Alert, Badge, Button, Card, DataTable, Empty, ErrorBox, KV, Loading, Select, StatusBadge, Tabs, toast, Ltr } from '../components/ui';
 import { api, invalidate } from '../lib/api';
 import { useApi, useDebounced } from '../lib/hooks';
 import { useSession } from '../lib/session';
@@ -485,4 +485,3 @@ function ClientFees({ clientId, p, onPay, onExpense }: { clientId: string; p: Pr
   );
 }
 
-export { confirmAsync };

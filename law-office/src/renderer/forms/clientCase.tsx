@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Alert, Button, Checkbox, DateInput, Select, TextArea, TextInput, Ltr } from '../components/ui';
 import { api } from '../lib/api';
@@ -331,9 +331,4 @@ export function StageForm({ caseId, initial, stages, onClose }: { caseId: string
       </div>
     </FormModal>
   );
-}
-
-export function useEffectOnce(fn: () => void) {
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(fn, []);
 }
