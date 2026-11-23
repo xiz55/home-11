@@ -64,18 +64,21 @@ export function configSnippets(dataDir: string, token: string) {
   const exe = runtime.execPath;
   const script = runtime.mcpScriptPath;
   const env = { ELECTRON_RUN_AS_NODE: '1', LAWOFFICE_DATA_DIR: dataDir, LAWOFFICE_MCP_TOKEN: token };
-  const claudeJson = JSON.stringify({ mcpServers: { 'law-office': { type: 'stdio', command: exe, args: [script], env } } }, null, 2);
-  const claudeCli = `claude mcp add law-office --transport stdio --scope user --env ELECTRON_RUN_AS_NODE=1 --env LAWOFFICE_DATA_DIR=${q(dataDir)} --env LAWOFFICE_MCP_TOKEN=${token} -- ${q(exe)} ${q(script)}`;
+  // Claude Code: خادم stdio لا يحتاج حقل type؛ الخيارات قبل الاسم ثم -- ثم الأمر
+  const claudeJson = JSON.stringify({ mcpServers: { 'law-office': { command: exe, args: [script], env } } }, null, 2);
+  const claudeCli = `claude mcp add --env ELECTRON_RUN_AS_NODE=1 --env LAWOFFICE_DATA_DIR=${q(dataDir)} --env LAWOFFICE_MCP_TOKEN=${token} --transport stdio --scope user law-office -- ${q(exe)} ${q(script)}`;
   const tomlStr = (s: string) => `'${s.replace(/'/g, "''")}'`;
   const codexToml = `[mcp_servers.law_office]
 command = ${tomlStr(exe)}
 args = [${tomlStr(script)}]
+startup_timeout_sec = 30
 
 [mcp_servers.law_office.env]
 ELECTRON_RUN_AS_NODE = "1"
 LAWOFFICE_DATA_DIR = ${tomlStr(dataDir)}
 LAWOFFICE_MCP_TOKEN = "${token}"`;
-  return { claudeJson, claudeCli, codexToml };
+  const codexCli = `codex mcp add law_office --env ELECTRON_RUN_AS_NODE=1 --env LAWOFFICE_DATA_DIR=${q(dataDir)} --env LAWOFFICE_MCP_TOKEN=${token} -- ${q(exe)} ${q(script)}`;
+  return { claudeJson, claudeCli, codexToml, codexCli };
 }
 
 export function createIntegrationToken(ctx: Ctx, input: { name: string; clientIds: string[]; caseIds: string[]; allowDocumentText: boolean; expiresOn: string | null }) {

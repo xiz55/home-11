@@ -34,6 +34,11 @@ jobs:
         run: npx vitest run
       - name: Package Windows installer (NSIS x64)
         run: npx electron-builder --win nsis --x64 --publish never
+      - name: Fingerprints of the packaged program
+        shell: pwsh
+        run: |
+          Get-FileHash release\win-unpacked\resources\app.asar -Algorithm SHA256 | Format-List
+          Get-ChildItem release\LawOfficeManager-Setup-*-x64.exe | Get-FileHash -Algorithm SHA256 | Format-List
       - name: End-to-end acceptance journey on the packaged Windows app
         shell: pwsh
         run: |

@@ -174,6 +174,9 @@ export function IntegrationTokenForm({ onClose }: { onClose: () => void }) {
           <h3>إعداد Codex (ملف ‎~/.codex/config.toml)</h3>
           <pre className="snippet">{snippets.codexToml}</pre>
           <div className="row"><Button size="sm" icon={<Copy />} onClick={() => copy(snippets.codexToml)}>نسخ</Button></div>
+          <h3>أو بأمر Codex</h3>
+          <pre className="snippet">{snippets.codexCli}</pre>
+          <div className="row"><Button size="sm" icon={<Copy />} onClick={() => copy(snippets.codexCli)}>نسخ</Button></div>
           <div className="help">الخطوات التفصيلية في دليل «ربط أدوات الذكاء الاصطناعي» المرفق مع البرنامج. لا يغيّر البرنامج إعدادات أي أداة تلقائيًا.</div>
         </div>
       </Modal>

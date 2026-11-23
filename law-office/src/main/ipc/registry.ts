@@ -188,6 +188,12 @@ export const REGISTRY = {
     const err = await ctx.platform.openPath(ctx.paths.dataDir);
     return { ok: !err, message: err || null };
   }),
+  'system.openGuide': def('user', empty, async (ctx) => {
+    const f = path.join(runtime.docsDir, 'دليل-الاستخدام.html');
+    if (!fs.existsSync(f)) throw new AppError('NOT_FOUND', 'ملف الدليل غير موجود في مجلد البرنامج');
+    const err = await ctx.platform.openPath(f);
+    return { ok: !err, message: err || null };
+  }),
   'system.verifyAttachments': def('owner', z.object({ hash: z.boolean().default(false) }).default({}), (ctx, i) => documents.verifyAttachments(ctx, { hash: i.hash })),
   'activity.list': def('owner', z.object({ caseId: S.optId, userId: S.optId, limit: z.number().int().min(1).max(1000).default(200), before: z.string().max(40).nullish() }).default({}), (ctx, i) => listActivity(ctx, i)),
 

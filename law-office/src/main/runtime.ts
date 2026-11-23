@@ -4,6 +4,7 @@ export interface RuntimeInfo {
   execPath: string;
   mcpScriptPath: string;
   fontsDir: string;
+  docsDir: string;
   isPackaged: boolean;
   platform: NodeJS.Platform;
   customDataDir: boolean;
@@ -14,6 +15,7 @@ export const runtime: RuntimeInfo = {
   execPath: process.execPath,
   mcpScriptPath: '',
   fontsDir: '',
+  docsDir: '',
   isPackaged: false,
   platform: process.platform,
   customDataDir: false,

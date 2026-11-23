@@ -580,6 +580,7 @@ function AccountTab() {
         <KV items={[['الاسم', state?.user?.displayName], ['اسم المستخدم', <Ltr>{state?.user?.username}</Ltr>], ['الدور', state?.user ? ROLES[state.user.role].label : '']]} />
         <div className="btn-group" style={{ marginTop: 16 }}>
           <Button icon={<KeyRound />} onClick={() => setPw(true)}>تغيير كلمة المرور</Button>
+          <Button onClick={() => void api('system.openGuide', {}).then((r) => !r.ok && toast.error(r.message ?? 'تعذر فتح الدليل'), toast.error)}>فتح دليل الاستخدام</Button>
         </div>
       </Card>
       {isOwner && (

@@ -335,6 +335,7 @@ app.whenReady().then(() => {
     // خادم MCP خارج أرشيف asar حتى يُشغَّل مباشرة بوضع Node
     mcpScriptPath: path.join(__dirname, '..', 'mcp', 'server.js').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`),
     fontsDir: path.join(__dirname, '..', 'fonts'),
+    docsDir: app.isPackaged ? path.join(process.resourcesPath, 'docs') : path.join(__dirname, '..', '..', 'docs'),
     isPackaged: app.isPackaged,
     customDataDir: !!customDir,
   });
