@@ -1,0 +1,52 @@
+appId: com.lawoffice.manager
+productName: LawOfficeManager
+copyright: "Law Office Manager"
+directories:
+  output: release
+  buildResources: resources
+files:
+  - dist/**/*
+  - package.json
+  - "!**/*.map"
+extraResources:
+  - from: docs/
+    to: docs/
+    filter: ["**/*"]
+asar: true
+asarUnpack:
+  - dist/mcp/**
+  - dist/main/extract-worker.mjs
+compression: normal
+publish: null
+electronFuses:
+  runAsNode: true
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: true
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false
+win:
+  executableName: LawOfficeManager
+  icon: resources/icon.ico
+  target:
+    - target: nsis
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: "إدارة مكتب المحاماة"
+  uninstallDisplayName: "إدارة مكتب المحاماة"
+  deleteAppDataOnUninstall: false
+  artifactName: "LawOfficeManager-Setup-${version}-${arch}.${ext}"
+  installerLanguages:
+    - ar_SA
+  language: "1025"
+linux:
+  executableName: law-office-manager
+  icon: resources/icon.png
+  category: Office
+  target:
+    - target: dir

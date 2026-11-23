@@ -1,4 +1,5 @@
 // خيط عامل منفصل للاستخراج حتى لا تتجمد الواجهة أثناء معالجة ملفات كبيرة.
+import './dommatrix';
 import { parentPort } from 'node:worker_threads';
 import { extractText } from './core';
 

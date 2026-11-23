@@ -358,7 +358,7 @@ let toastSeq = 0;
 const toastListeners = new Set<() => void>();
 function pushToast(kind: ToastItem['kind'], text: string) {
   const id = ++toastSeq;
-  toasts = [...toasts, { id, kind, text }];
+  toasts = [...toasts, { id, kind, text }].slice(-3);
   toastListeners.forEach((l) => l());
   setTimeout(() => {
     toasts = toasts.filter((t) => t.id !== id);

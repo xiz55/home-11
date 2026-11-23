@@ -28,6 +28,8 @@ if (customDir) {
   app.setPath('userData', path.join(path.dirname(dataDir), `.profile-${path.basename(dataDir)}`));
 }
 app.setAppUserModelId(APP_ID);
+// تنسيق حقول التاريخ سنة-شهر-يوم بأرقام لاتينية متسقًا مع عرض التواريخ في البرنامج
+app.commandLine.appendSwitch('lang', 'en-CA');
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 
@@ -206,8 +208,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1366,
     height: 860,
-    minWidth: 1000,
-    minHeight: 620,
+    minWidth: 800,
+    minHeight: 500,
     show: false,
     backgroundColor: '#F7F7F5',
     title: readSetting(core!.db, 'office.name'),
@@ -330,14 +332,15 @@ app.whenReady().then(() => {
   setRuntime({
     appVersion: app.getVersion(),
     execPath: process.execPath,
-    mcpScriptPath: path.join(__dirname, '..', 'mcp', 'server.js'),
+    // خادم MCP خارج أرشيف asar حتى يُشغَّل مباشرة بوضع Node
+    mcpScriptPath: path.join(__dirname, '..', 'mcp', 'server.js').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`),
     fontsDir: path.join(__dirname, '..', 'fonts'),
     isPackaged: app.isPackaged,
     customDataDir: !!customDir,
   });
   loadReportFonts(path.join(__dirname, '..', 'fonts'));
   try {
-    core = new AppCore(dataDir, platformFor(() => mainWindow), () => new Date(), { extractWorkerFile: path.join(__dirname, 'extract-worker.mjs') });
+    core = new AppCore(dataDir, platformFor(() => mainWindow), () => new Date(), { extractWorkerFile: path.join(__dirname, 'extract-worker.mjs').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`) });
     core.onLocked = (key) => {
       const id = Number(key.replace('wc-', ''));
       for (const w of BrowserWindow.getAllWindows()) if (w.webContents.id === id) w.webContents.send('session:locked');

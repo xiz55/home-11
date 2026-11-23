@@ -131,7 +131,7 @@ function MissedReminders() {
           <li key={r.id} className="row between">
             <div>
               <div>{r.label}</div>
-              <div className="help">موعد التنبيه: <Ltr>{fmtDateTime(r.remindAt)}</Ltr></div>
+              <div className="help">موعد التنبيه: {fmtDateTime(r.remindAt)}</div>
             </div>
             {r.caseId && (
               <Button

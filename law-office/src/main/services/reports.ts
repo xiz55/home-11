@@ -68,6 +68,7 @@ export function loadReportFonts(fontsDir: string) {
 }
 
 const ltr = (s: string | null | undefined) => (s ? `<bdi dir="ltr" class="ltr">${e(s)}</bdi>` : '—');
+const dt = (s: string | null | undefined) => (s ? `<bdi dir="rtl">${e(s)}</bdi>` : '—');
 const txt = (s: string | null | undefined) => (s ? e(s).replace(/\n/g, '<br>') : '—');
 const badge = (label: string) => `<span class="badge">${e(label)}</span>`;
 
@@ -114,8 +115,8 @@ footer.r { margin-top: 20px; border-top: 1px solid #E3E5E8; padding-top: 6px; co
 .src { color: #59636E; font-size: 9pt; }
 </style></head><body><div class="wrap">
 <header class="r"><div class="office">${e(office)}</div>${contact ? `<div class="contact">${e(contact)}</div>` : ''}
-<h1>${e(title)}</h1><div class="sub">${e(subtitle)}</div>
-<div class="meta"><span>تاريخ الاستخراج: ${ltr(fmtDateTime(ctx.now().toISOString()))}</span><span>آخر تحديث مسجل: ${lastUpdate ? ltr(fmtDateTime(lastUpdate)) : '—'}</span><span>استخرجه: ${e(ctx.user?.displayName ?? '')}</span></div>
+<h1>${e(title)}</h1><div class="sub">${subtitle}</div>
+<div class="meta"><span>تاريخ الاستخراج: ${dt(fmtDateTime(ctx.now().toISOString()))}</span><span>آخر تحديث مسجل: ${lastUpdate ? dt(fmtDateTime(lastUpdate)) : '—'}</span><span>استخرجه: ${e(ctx.user?.displayName ?? '')}</span></div>
 </header>
 ${notes.map((n) => `<div class="note">${e(n)}</div>`).join('')}
 ${body}
@@ -182,7 +183,7 @@ function caseReport(ctx: Ctx, input: ReportInput) {
     table(
       ['الموعد', 'المرحلة', 'الحالة', 'النتيجة / الملخص', 'المصدر'],
       hearings.map((h) => [
-        ltr(fmtDateTime(h.startsAt)) + (h.confirmed ? '' : '<br><span class="src">موعد غير مؤكد</span>'),
+        dt(fmtDateTime(h.startsAt)) + (h.confirmed ? '' : '<br><span class="src">موعد غير مؤكد</span>'),
         e(stageName(h.stageId)),
         e(labelOf(HEARING_STATUSES, h.status)),
         txt([h.outcome, h.summary].filter(Boolean).join('\n') || null),
@@ -221,7 +222,7 @@ function caseReport(ctx: Ctx, input: ReportInput) {
     const filled = a.sections.filter((s) => s.text.trim());
     body += '<h2>التحليل (يدوي — كتبه المستخدم)</h2>';
     body += filled.length
-      ? filled.map((s) => `<h3 style="font-size:11pt;margin:8px 0 2px">${e(s.label)}</h3><div class="text-block">${e(s.text)}</div><div class="src">آخر تعديل: ${e(s.updatedByName ?? '—')} ${s.updatedAt ? ltr(fmtDateTime(s.updatedAt)) : ''}</div>`).join('')
+      ? filled.map((s) => `<h3 style="font-size:11pt;margin:8px 0 2px">${e(s.label)}</h3><div class="text-block">${e(s.text)}</div><div class="src">آخر تعديل: ${e(s.updatedByName ?? '—')} ${s.updatedAt ? dt(fmtDateTime(s.updatedAt)) : ''}</div>`).join('')
       : '<p class="empty">لم يُكتب تحليل.</p>';
     if (a.evidence.length)
       body += '<h3 style="font-size:11pt">جدول الأدلة</h3>' + table(['الواقعة / الطلب', 'درجة الثبوت', 'المستند المؤيد', 'ملاحظات'], a.evidence.map((x) => [txt(x.statement), e(labelOf({ confirmed: { label: 'مؤكدة بمستند' }, client_statement: { label: 'إفادة عميل' }, needs_verification: { label: 'تحتاج تحققًا' } }, x.reliability)), e(x.documentTitle ?? '—') + (x.locationRef ? ` (${e(x.locationRef)})` : ''), txt(x.notes)]));
@@ -247,7 +248,7 @@ function caseReport(ctx: Ctx, input: ReportInput) {
   if (notes.length) body += `<h2>الملاحظات${o.includeInternalNotes ? '' : ' (غير الداخلية فقط)'}</h2>` + table(['التاريخ', 'الملاحظة', 'كتبها'], notes.map((n) => [ltr(fmtDate(n.createdAt.slice(0, 10))), txt(n.body), e(n.byName ?? '—')]));
   return {
     title: `تقرير موقف قضية — ${c.title}`,
-    html: shell(ctx, `تقرير موقف قضية`, `${c.title} — ملف ${c.fileNo} — العميل: ${d.client.name}`, maxUpdated(ctx, [c.id], c.clientId), body),
+    html: shell(ctx, `تقرير موقف قضية`, `${e(c.title)} — ملف ${ltr(c.fileNo)} — العميل: ${e(d.client.name)}`, maxUpdated(ctx, [c.id], c.clientId), body),
   };
 }
 
@@ -276,8 +277,8 @@ function clientReport(ctx: Ctx, input: ReportInput) {
         e(c.opponents.join('، ') || '—'),
         e(c.stage?.stageType ?? '—') + (c.stage?.officialCaseNo ? '<br>' + ltr(c.stage.officialCaseNo) : ''),
         e(labelOf(CASE_STATUSES, c.status)) + (c.archived ? ' (مؤرشفة)' : ''),
-        c.lastAction ? `${e(c.lastAction.label)}<br>${ltr(c.lastAction.isDateOnly ? fmtDate(c.lastAction.at) : fmtDateTime(c.lastAction.at))}` : 'لم يُسجل',
-        c.nextEvent ? `${e(c.nextEvent.label)}<br>${ltr(c.nextEvent.isDateOnly ? fmtDate(c.nextEvent.at) : fmtDateTime(c.nextEvent.at))}${c.nextEvent.confirmed ? '' : ' (غير مؤكد)'}` : '—',
+        c.lastAction ? `${e(c.lastAction.label)}<br>${dt(c.lastAction.isDateOnly ? fmtDate(c.lastAction.at) : fmtDateTime(c.lastAction.at))}` : 'لم يُسجل',
+        c.nextEvent ? `${e(c.nextEvent.label)}<br>${dt(c.nextEvent.isDateOnly ? fmtDate(c.nextEvent.at) : fmtDateTime(c.nextEvent.at))}${c.nextEvent.confirmed ? '' : ' (غير مؤكد)'}` : '—',
       ]),
     );
   body +=
@@ -292,7 +293,7 @@ function clientReport(ctx: Ctx, input: ReportInput) {
       ['الرقم', 'جهة الإصدار', 'الإصدار', 'الانتهاء', 'النطاق المسجل', 'القضايا المشمولة', 'الحالة'],
       d.poas.map((p) => [ltr(p.poaNo), e(p.issuer ?? '—'), p.issuedOn ? ltr(fmtDate(p.issuedOn)) : '—', p.expiresOn ? ltr(fmtDate(p.expiresOn)) : '—', txt(p.scope), e(p.cases.map((c) => c.fileNo).join('، ') || 'لم تُربط بقضايا'), e(labelOf(POA_STATUSES, p.status))]),
     );
-  body += '<h2>المواعيد القادمة</h2>' + table(['الموعد', 'النوع', 'البيان', 'الملف'], d.upcoming.map((u) => [ltr(u.startsAt ? fmtDateTime(u.startsAt) : fmtDate(u.date)), e(u.kind === 'hearing' ? 'جلسة' : u.kind === 'task' ? 'مهمة' : 'موعد إجرائي') + (u.confirmed ? '' : ' (غير مؤكد)'), e(u.title), ltr(u.fileNo)]), 'لا توجد مواعيد قادمة مسجلة');
+  body += '<h2>المواعيد القادمة</h2>' + table(['الموعد', 'النوع', 'البيان', 'الملف'], d.upcoming.map((u) => [dt(u.startsAt ? fmtDateTime(u.startsAt) : fmtDate(u.date)), e(u.kind === 'hearing' ? 'جلسة' : u.kind === 'task' ? 'مهمة' : 'موعد إجرائي') + (u.confirmed ? '' : ' (غير مؤكد)'), e(u.title), ltr(u.fileNo)]), 'لا توجد مواعيد قادمة مسجلة');
   if (o.includeFees && d.finance) {
     body += '<h2>ملخص الأتعاب</h2>' + kv([
       ['إجمالي الأتعاب الثابتة المتفق عليها', ltr(fmtAmount(d.finance.agreed))],
@@ -306,7 +307,7 @@ function clientReport(ctx: Ctx, input: ReportInput) {
   if (notes.length) body += `<h2>الملاحظات${o.includeInternalNotes ? '' : ' (غير الداخلية فقط)'}</h2>` + table(['التاريخ', 'الملاحظة', 'الملف'], notes.map((n) => [ltr(fmtDate(n.createdAt.slice(0, 10))), txt(n.body), ltr(n.caseFileNo)]));
   if (o.includeInternalNotes && d.communications.length)
     body += '<h2>سجل التواصل</h2>' + table(['التاريخ', 'الوسيلة', 'الملخص'], d.communications.map((m) => [ltr(fmtDate(m.occurredOn)), e(m.channel), txt(m.summary)]));
-  return { title: `ملخص شامل — ${cl.name}`, html: shell(ctx, 'ملخص شامل للعميل', cl.name, maxUpdated(ctx, d.cases.map((c) => c.id), cl.id), body) };
+  return { title: `ملخص شامل — ${cl.name}`, html: shell(ctx, 'ملخص شامل للعميل', e(cl.name), maxUpdated(ctx, d.cases.map((c) => c.id), cl.id), body) };
 }
 
 function hearingsReport(ctx: Ctx, input: ReportInput) {
@@ -315,10 +316,10 @@ function hearingsReport(ctx: Ctx, input: ReportInput) {
   const evs = calendarEvents(ctx, { from, to, clientId: input.clientId, caseId: input.caseId }).filter((x) => x.kind === 'hearing' && x.status !== 'cancelled');
   const body = table(
     ['الموعد', 'العميل', 'القضية', 'المرحلة', 'المكان', 'الحالة'],
-    evs.map((x) => [ltr(fmtDateTime(x.startsAt)) + (x.confirmed ? '' : '<br><span class="src">غير مؤكد</span>'), e(x.clientName), e(x.caseTitle) + '<br>' + ltr(x.fileNo), e(x.stageType), e(x.location ?? '—'), e(labelOf(HEARING_STATUSES, x.status))]),
+    evs.map((x) => [dt(fmtDateTime(x.startsAt)) + (x.confirmed ? '' : '<br><span class="src">غير مؤكد</span>'), e(x.clientName), e(x.caseTitle) + '<br>' + ltr(x.fileNo), e(x.stageType), e(x.location ?? '—'), e(labelOf(HEARING_STATUSES, x.status))]),
     'لا توجد جلسات مسجلة في هذه الفترة',
   );
-  return { title: 'الجلسات القادمة', html: shell(ctx, 'الجلسات القادمة', `من ${fmtDate(from)} إلى ${fmtDate(to)}`, null, body, evs.some((x) => !x.confirmed) ? ['المواعيد غير المؤكدة معلّمة بوضوح ولا تُعامل كمواعيد معتمدة.'] : []) };
+  return { title: 'الجلسات القادمة', html: shell(ctx, 'الجلسات القادمة', `من ${dt(fmtDate(from))} إلى ${dt(fmtDate(to))}`, null, body, evs.some((x) => !x.confirmed) ? ['المواعيد غير المؤكدة معلّمة بوضوح ولا تُعامل كمواعيد معتمدة.'] : []) };
 }
 
 function tasksReport(ctx: Ctx, input: ReportInput) {
@@ -359,7 +360,7 @@ function feesReport(ctx: Ctx, input: ReportInput) {
   body += '<h2>المصاريف</h2>' + table(['التاريخ', 'البيان', 'المبلغ', 'تُسترد', 'سُددت'], expenses.map((x) => [ltr(fmtDate(x.spentOn)), e(x.title), ltr(fmtAmount(x.amount)), x.recoverable ? 'نعم' : 'لا', x.reimbursedOn ? ltr(fmtDate(x.reimbursedOn)) : '—']));
   return {
     title: `كشف أتعاب — ${client.name}`,
-    html: shell(ctx, 'كشف أتعاب', client.name, maxUpdated(ctx, [], input.clientId), body, ['هذا كشف حساب داخلي لأغراض المتابعة وليس فاتورة ضريبية.']),
+    html: shell(ctx, 'كشف أتعاب', e(client.name), maxUpdated(ctx, [], input.clientId), body, ['هذا كشف حساب داخلي لأغراض المتابعة وليس فاتورة ضريبية.']),
   };
 }
 

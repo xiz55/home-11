@@ -3,7 +3,7 @@ import { Worker } from 'node:worker_threads';
 import { randomUUID } from 'node:crypto';
 import type { Db } from '../db/db';
 import type { AppPaths } from '../paths';
-import { attachmentPath } from '../paths';
+import { appendLog, attachmentPath } from '../paths';
 import { normalizeArabic } from '../../shared/text';
 
 type Extractor = (file: string, ext: string) => Promise<{ status: 'done' | 'none' | 'unsupported'; text: string | null }>;
@@ -27,7 +27,7 @@ export class ExtractionQueue {
   }
 
   enqueuePending() {
-    for (const r of this.getDb().all<{ id: string }>("SELECT id FROM document_versions WHERE extraction_status = 'pending'")) this.queue.push(r.id);
+    for (const r of this.getDb().all<{ id: string }>("SELECT id FROM document_versions WHERE extraction_status IN ('pending', 'failed')")) this.queue.push(r.id);
     void this.pump();
   }
 
@@ -79,12 +79,15 @@ export class ExtractionQueue {
           continue;
         }
         const v = db.get<{ stored_name: string; ext: string; extraction_status: string }>('SELECT stored_name, ext, extraction_status FROM document_versions WHERE id = ?', [vid]);
-        if (!v || v.extraction_status !== 'pending') continue;
+        if (!v || (v.extraction_status !== 'pending' && v.extraction_status !== 'failed')) continue;
         const r = await this.extract(attachmentPath(this.paths, v.stored_name), v.ext);
         try {
           db = this.getDb();
           if (r.ok) db.run('UPDATE document_versions SET extraction_status = ?, extracted_text = ?, extracted_norm = ? WHERE id = ?', [r.status, r.text ?? null, r.text ? normalizeArabic(r.text) : null, vid]);
-          else db.run("UPDATE document_versions SET extraction_status = 'failed' WHERE id = ?", [vid]);
+          else {
+            appendLog(this.paths, `extraction failed for ${vid}: ${r.error ?? ''}`);
+            db.run("UPDATE document_versions SET extraction_status = 'failed' WHERE id = ?", [vid]);
+          }
         } catch {
           /* قاعدة البيانات أُغلقت (استعادة) — تُعاد المحاولة عند التشغيل التالي */
         }

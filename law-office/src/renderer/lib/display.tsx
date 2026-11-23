@@ -3,11 +3,11 @@ import { fmtDate, fmtDateTime, fmtDateLong, utcIsoToRiyadh, fmtTime12 } from '..
 
 export function When({ at, dateOnly }: { at: string | null | undefined; dateOnly?: boolean }) {
   if (!at) return <span className="muted">—</span>;
-  return <Ltr>{dateOnly ? fmtDate(at) : fmtDateTime(at)}</Ltr>;
+  return <bdi dir="rtl" className="when">{dateOnly ? fmtDate(at) : fmtDateTime(at)}</bdi>;
 }
 
 export function TimeOf({ iso }: { iso: string }) {
-  return <Ltr>{fmtTime12(utcIsoToRiyadh(iso).time)}</Ltr>;
+  return <bdi dir="rtl">{fmtTime12(utcIsoToRiyadh(iso).time)}</bdi>;
 }
 
 export function DateLong({ date }: { date: string }) {

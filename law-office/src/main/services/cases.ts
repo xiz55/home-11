@@ -62,11 +62,11 @@ function nextFileNo(ctx: Ctx): string {
   ctx.db.run('INSERT INTO counters (name, value) VALUES (?, 0) ON CONFLICT(name) DO NOTHING', [key]);
   ctx.db.run('UPDATE counters SET value = value + 1 WHERE name = ?', [key]);
   let n = ctx.db.get<{ value: number }>('SELECT value FROM counters WHERE name = ?', [key])!.value;
-  let fileNo = `${year}-${String(n).padStart(4, '0')}`;
+  let fileNo = `${year}/${String(n).padStart(4, '0')}`;
   while (ctx.db.get('SELECT id FROM cases WHERE file_no = ?', [fileNo])) {
     ctx.db.run('UPDATE counters SET value = value + 1 WHERE name = ?', [key]);
     n++;
-    fileNo = `${year}-${String(n).padStart(4, '0')}`;
+    fileNo = `${year}/${String(n).padStart(4, '0')}`;
   }
   return fileNo;
 }
