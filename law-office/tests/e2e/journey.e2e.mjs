@@ -123,6 +123,12 @@ describe('رحلة القبول الكاملة عبر الواجهة', { concurr
     await saveModal(win);
     await expectToast(win, /سُجل العقد/);
     await win.getByText('عقد شامل لعدة قضايا').waitFor();
+    // إرفاق ملف العقد (PDF) مباشرة من تبويب العقود
+    await win.getByRole('button', { name: 'إرفاق ملف العقد' }).click();
+    await attachViaDialog(win, makePdf(path.join(files, 'fee-contract.pdf'), 'Fee contract'));
+    await saveModal(win, 'حفظ المرفق');
+    await expectToast(win, /حُفظ المرفق/);
+    await win.getByRole('button', { name: /عقد أتعاب شامل 2026 \(PDF\)/ }).waitFor();
 
     await win.getByRole('tab', { name: /الوكالات/ }).click();
     await win.getByRole('button', { name: 'تسجيل وكالة' }).click();

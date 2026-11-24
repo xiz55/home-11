@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArchiveRestore, Banknote, Briefcase, FilePlus2, FileText, Pencil, Plus, ScrollText, StickyNote, UserPlus, MessageSquare, BarChart3 } from 'lucide-react';
+import { Paperclip, Archive, ArchiveRestore, Banknote, Briefcase, FilePlus2, FileText, Pencil, Plus, ScrollText, StickyNote, UserPlus, MessageSquare, BarChart3 } from 'lucide-react';
 import { Alert, Badge, Button, Card, DataTable, Empty, ErrorBox, KV, Loading, Select, StatusBadge, Tabs, toast, Ltr } from '../components/ui';
 import { api, invalidate } from '../lib/api';
 import { useApi, useDebounced } from '../lib/hooks';
@@ -12,7 +12,7 @@ import { fmtAmount } from '../../shared/money';
 import { fmtDate } from '../../shared/dates';
 import { ClientForm, CaseForm } from '../forms/clientCase';
 import { ContractForm, ExpenseForm, FeeItemForm, NoteForm, CommForm, PaymentForm, PoaForm } from '../forms/finance';
-import { DocumentAttachForm } from '../forms/docs';
+import { DocumentAttachForm, type DocDefaults } from '../forms/docs';
 import { DocumentBrowser } from '../components/viewer';
 import { optsFrom } from '../forms/common';
 import { ReasonForm } from '../forms/litigation';
@@ -96,6 +96,25 @@ export function ClientProfilePage() {
   const [editPoa, setEditPoa] = useState<Profile['poas'][number] | null>(null);
   const [feeItemFor, setFeeItemFor] = useState<string | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
+  const [attach, setAttach] = useState<DocDefaults | null>(null);
+  const openDoc = (id: string) => {
+    setSelectedDoc(id);
+    setSp({ tab: 'docs' }, { replace: true });
+  };
+  const linkedFiles = (pred: (d: Profile['documents'][number]) => boolean) => {
+    const list = p.documents.filter(pred);
+    return list.length ? (
+      <div className="chip-list" style={{ marginTop: 10 }}>
+        {list.map((d) => (
+          <Button key={d.id} size="sm" icon={<FileText />} onClick={() => openDoc(d.id)}>
+            {d.title} ({(d.current?.ext ?? '').toUpperCase()})
+          </Button>
+        ))}
+      </div>
+    ) : (
+      <div className="help" style={{ marginTop: 10 }}>لا توجد ملفات مرفقة.</div>
+    );
+  };
   if (q.loading && !q.data) return <Loading />;
   if (q.error) return <ErrorBox error={q.error} onRetry={q.reload} />;
   const p = q.data!;
@@ -231,6 +250,10 @@ export function ClientProfilePage() {
       )}
       {tab === 'cases' && (
         <section className="card">
+          <div className="toolbar">
+            <span className="help grow">اضغط القضية لفتح ملفها (الجلسات، الأحكام، المذكرات، العقود والوكالات).</span>
+            <Button size="sm" icon={<Paperclip />} onClick={() => setAttach({ clientId: c.id })}>إرفاق ملف (Word أو PDF)</Button>
+          </div>
           <DataTable
             rows={p.cases}
             rowKey={(r) => r.id}
@@ -263,9 +286,12 @@ export function ClientProfilePage() {
                 actions={
                   p.canManageFees && full ? (
                     <>
+                      <Button size="sm" icon={<Paperclip />} onClick={() => setAttach({ clientId: c.id, contractId: k.id, category: 'fee_contract', title: k.title })}>إرفاق ملف العقد</Button>
                       <Button size="sm" onClick={() => setFeeItemFor(k.id)}>إضافة بند</Button>
                       <Button size="sm" icon={<Pencil />} onClick={() => setEditContract(k)}>تعديل</Button>
                     </>
+                  ) : full ? (
+                    <Button size="sm" icon={<Paperclip />} onClick={() => setAttach({ clientId: c.id, contractId: k.id, category: 'fee_contract', title: k.title })}>إرفاق ملف العقد</Button>
                   ) : undefined
                 }
               >
@@ -286,6 +312,7 @@ export function ClientProfilePage() {
                   ]}
                 />
                 {k.totals?.scheduleMismatch && <Alert tone="warning">مجموع البنود المالية لا يساوي إجمالي العقد.</Alert>}
+                {linkedFiles((d) => d.contractId === k.id)}
               </Card>
             ))
           )}
@@ -298,7 +325,7 @@ export function ClientProfilePage() {
             <Card><Empty title="لا توجد وكالات مسجلة" /></Card>
           ) : (
             p.poas.map((x) => (
-              <Card key={x.id} title={<div className="row wrap"><h2>وكالة {x.poaNo ? <Ltr>{x.poaNo}</Ltr> : 'دون رقم'}</h2><StatusBadge map={POA_STATUSES} value={x.status} /></div>} actions={full ? <Button size="sm" icon={<Pencil />} onClick={() => setEditPoa(x)}>تعديل</Button> : undefined}>
+              <Card key={x.id} title={<div className="row wrap"><h2>وكالة {x.poaNo ? <Ltr>{x.poaNo}</Ltr> : 'دون رقم'}</h2><StatusBadge map={POA_STATUSES} value={x.status} /></div>} actions={full ? (<><Button size="sm" icon={<Paperclip />} onClick={() => setAttach({ clientId: c.id, poaId: x.id, category: 'poa', title: `وكالة ${x.poaNo ?? ''}`.trim() })}>إرفاق ملف الوكالة</Button><Button size="sm" icon={<Pencil />} onClick={() => setEditPoa(x)}>تعديل</Button></>) : undefined}>
                 <KV
                   items={[
                     ['جهة الإصدار', x.issuer],
@@ -310,6 +337,7 @@ export function ClientProfilePage() {
                     ['القضايا المشمولة', x.cases.length ? x.cases.map((y) => `${y.fileNo} — ${y.title}`).join('، ') : 'لم تُربط بقضايا — لا يُفترض شمولها لكل القضايا'],
                   ]}
                 />
+                {linkedFiles((d) => d.poaId === x.id)}
               </Card>
             ))
           )}
@@ -388,6 +416,7 @@ export function ClientProfilePage() {
       {editPoa && <PoaForm clientId={c.id} initial={editPoa} onClose={() => setEditPoa(null)} />}
       {modal === 'payment' && <PaymentForm clientId={c.id} onClose={() => setModal(null)} />}
       {modal === 'expense' && <ExpenseForm clientId={c.id} onClose={() => setModal(null)} />}
+      {attach && <DocumentAttachForm defaults={attach} onClose={() => setAttach(null)} />}
       {modal === 'doc' && <DocumentAttachForm defaults={{ clientId: c.id }} onClose={() => setModal(null)} onSaved={setSelectedDoc} />}
       {modal === 'note' && <NoteForm clientId={c.id} onClose={() => setModal(null)} />}
       {modal === 'comm' && <CommForm clientId={c.id} onClose={() => setModal(null)} />}
