@@ -232,9 +232,9 @@ export function CasePage() {
       {modal?.k === 'archive' && <ReasonForm title="أرشفة ملف القضية" label="سبب الأرشفة (اختياري)" submitLabel="أرشفة" onClose={() => setModal(null)} onSubmit={(reason) => api('cases.setArchived', { id: c.id, archived: true, reason: reason || null })} />}
       {modal?.k === 'related' && <RelatedWorkForm caseId={c.id} initial={modal.work} onClose={() => setModal(null)} />}
       {modal?.k === 'note' && <NoteForm clientId={c.clientId} caseId={c.id} onClose={() => setModal(null)} />}
-      {modal?.k === 'contract' && <ContractForm clientId={c.clientId} caseId={c.id} onClose={() => setModal(null)} />}
+      {modal?.k === 'contract' && <ContractForm clientId={c.clientId} caseId={c.id} forCase={{ fileNo: c.fileNo, title: c.title }} onClose={() => setModal(null)} />}
       {modal?.k === 'poa' && <PoaForm clientId={c.clientId} caseId={c.id} onClose={() => setModal(null)} />}
-      {modal?.k === 'payment' && <PaymentForm clientId={c.clientId} onClose={() => setModal(null)} />}
+      {modal?.k === 'payment' && <PaymentForm clientId={c.clientId} caseId={c.id} onClose={() => setModal(null)} />}
       {modal?.k === 'expense' && <ExpenseForm clientId={c.clientId} caseId={c.id} onClose={() => setModal(null)} />}
     </div>
   );
@@ -254,6 +254,9 @@ function SummaryTab({ d, onModal, writable }: { d: CaseData; onModal: (m: ModalS
   };
   return (
     <div className="grid c2">
+      <div className="span-all">
+        <CaseFeesCard d={d} onModal={onModal} writable={writable} />
+      </div>
       <div className="stack g2">
         <Card title="بيانات الملف">
           <KV
@@ -330,6 +333,102 @@ function SummaryTab({ d, onModal, writable }: { d: CaseData; onModal: (m: ModalS
         </Card>
       </div>
     </div>
+  );
+}
+
+/** جدول مختصر لأتعاب القضية: مبلغ القضية، المقدم، المسدد، المتبقي. */
+function CaseFeesCard({ d, onModal, writable }: { d: CaseData; onModal: (m: ModalState) => void; writable: boolean }) {
+  const c = d.case;
+  const q = useApi(() => (d.permissions.canFees ? api('contracts.list', { caseId: c.id }) : Promise.resolve([])), [c.id, d.permissions.canFees]);
+  if (!d.permissions.canFees) {
+    return (
+      <Card title="أتعاب القضية">
+        <div className="muted">المبالغ مخفية — لا تملك صلاحية الاطلاع على الأتعاب.</div>
+      </Card>
+    );
+  }
+  const ks = (q.data ?? []).filter((k) => k.feeType !== 'none' && k.totals);
+  const own = ks.filter((k) => !k.sharedAcrossCases);
+  const shared = ks.filter((k) => k.sharedAcrossCases);
+  const total = (f: 'agreed' | 'advance' | 'paid' | 'remaining') => own.reduce((s, k) => s + (k.totals?.[f] ?? 0), 0);
+  const pct = ks.filter((k) => k.percentage !== null);
+  const canManage = d.permissions.canManageFees && writable;
+  return (
+    <Card
+      title="أتعاب القضية"
+      actions={
+        canManage ? (
+          <>
+            {ks.length > 0 && (
+              <Button size="sm" variant="primary" icon={<Plus />} onClick={() => onModal({ k: 'payment' })}>
+                تسجيل دفعة
+              </Button>
+            )}
+            <Button size="sm" onClick={() => onModal({ k: 'contract' })}>
+              {ks.length ? 'عقد / ملحق آخر' : 'تحديد أتعاب القضية'}
+            </Button>
+          </>
+        ) : undefined
+      }
+    >
+      {q.loading && !q.data ? (
+        <Loading />
+      ) : ks.length === 0 ? (
+        <div className="muted">لم تُحدَّد أتعاب لهذه القضية بعد.{canManage && ' اضغط «تحديد أتعاب القضية» لإدخال المبلغ ثم سجّل الدفعات.'}</div>
+      ) : (
+        <>
+          <table className="fee-mini" aria-label="ملخص أتعاب القضية">
+            <thead>
+              <tr>
+                <th>البيان</th>
+                <th>مبلغ القضية</th>
+                <th>المقدم</th>
+                <th>المسدد</th>
+                <th>المتبقي</th>
+              </tr>
+            </thead>
+            <tbody>
+              {own.map((k) => (
+                <tr key={k.id}>
+                  <td>{k.title}</td>
+                  <td>{fmtAmount(k.totals!.agreed)}</td>
+                  <td>{fmtAmount(k.totals!.advance)}</td>
+                  <td>{fmtAmount(k.totals!.paid)}</td>
+                  <td className="remaining">{fmtAmount(k.totals!.remaining)}</td>
+                </tr>
+              ))}
+              {own.length > 1 && (
+                <tr className="total">
+                  <td>الإجمالي</td>
+                  <td>{fmtAmount(total('agreed'))}</td>
+                  <td>{fmtAmount(total('advance'))}</td>
+                  <td>{fmtAmount(total('paid'))}</td>
+                  <td className="remaining">{fmtAmount(total('remaining'))}</td>
+                </tr>
+              )}
+              {shared.map((k) => (
+                <tr key={k.id} className="shared">
+                  <td>
+                    {k.title}
+                    <div className="help">عقد شامل لـ {k.cases.length} قضايا — المبالغ للعقد كاملًا ولا تُجمع لكل قضية</div>
+                  </td>
+                  <td>{fmtAmount(k.totals!.agreed)}</td>
+                  <td>{fmtAmount(k.totals!.advance)}</td>
+                  <td>{fmtAmount(k.totals!.paid)}</td>
+                  <td className="remaining">{fmtAmount(k.totals!.remaining)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="help" style={{ marginTop: 6 }}>المقدم جزء من المسدد. المتبقي = مبلغ القضية − المسدد.</div>
+          {pct.map((k) => (
+            <div key={k.id} className="help">
+              أتعاب نسبية في «{k.title}»: {k.percentage}% — {k.percentageBasis} (غير محتسبة ضمن المبالغ أعلاه)
+            </div>
+          ))}
+        </>
+      )}
+    </Card>
   );
 }
 

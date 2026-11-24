@@ -34,10 +34,13 @@ export function contractTotals(ctx: Ctx, contractId: string) {
   const k = ctx.db.get<{ fixed_amount: number | null; fee_type: FeeType }>('SELECT fixed_amount, fee_type FROM contracts WHERE id = ?', [contractId])!;
   const items = ctx.db.get<{ s: number | null; n: number }>('SELECT sum(amount) AS s, count(*) AS n FROM fee_items WHERE contract_id = ?', [contractId])!;
   const paid = ctx.db.get<{ s: number | null }>('SELECT sum(amount) AS s FROM payments WHERE contract_id = ? AND voided = 0', [contractId])!.s ?? 0;
+  // المقدم جزء من المسدد (دفعات معلّمة كدفعة مقدمة)
+  const advance = ctx.db.get<{ s: number | null }>('SELECT sum(amount) AS s FROM payments WHERE contract_id = ? AND voided = 0 AND is_advance = 1', [contractId])!.s ?? 0;
   const hasFixed = k.fee_type === 'fixed' || k.fee_type === 'mixed';
   const agreed = hasFixed ? (k.fixed_amount ?? (items.n ? items.s ?? 0 : 0)) : 0;
   return {
     agreed,
+    advance,
     paid,
     remaining: Math.max(agreed - paid, 0),
     overpaid: Math.max(paid - agreed, 0),
@@ -297,6 +300,7 @@ export function listPayments(ctx: Ctx, input: { contractId?: string | null; clie
       referenceNo: r.reference_no as string | null,
       notes: r.notes as string | null,
       voided: !!r.voided,
+      isAdvance: !!r.is_advance,
       voidReason: r.void_reason as string | null,
       byName: r.by_name as string | null,
       receiptDocumentId: r.receipt_document_id as string | null,
@@ -305,7 +309,7 @@ export function listPayments(ctx: Ctx, input: { contractId?: string | null; clie
 
 export function createPayment(
   ctx: Ctx,
-  input: { contractId: string; feeItemId: string | null; amount: number; paidOn: string; method: string | null; referenceNo: string | null; notes: string | null },
+  input: { contractId: string; feeItemId: string | null; amount: number; paidOn: string; method: string | null; referenceNo: string | null; notes: string | null; isAdvance?: boolean },
 ) {
   requirePerm(ctx, 'fees.manage', 'لا تملك صلاحية تسجيل الدفعات');
   const k = ctx.db.get<{ id: string; client_id: string; title: string; fee_type: string }>('SELECT id, client_id, title, fee_type FROM contracts WHERE id = ?', [input.contractId]);
@@ -319,11 +323,11 @@ export function createPayment(
   const now = ctx.now().toISOString();
   ctx.db.tx(() => {
     ctx.db.run(
-      `INSERT INTO payments (id, client_id, contract_id, fee_item_id, amount, paid_on, method, reference_no, notes, created_by, created_at, updated_by, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, k.client_id, input.contractId, input.feeItemId, input.amount, input.paidOn, input.method, input.referenceNo, input.notes, ctx.user!.id, now, ctx.user!.id, now],
+      `INSERT INTO payments (id, client_id, contract_id, fee_item_id, amount, paid_on, method, reference_no, notes, is_advance, created_by, created_at, updated_by, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, k.client_id, input.contractId, input.feeItemId, input.amount, input.paidOn, input.method, input.referenceNo, input.notes, !!input.isAdvance, ctx.user!.id, now, ctx.user!.id, now],
     );
-    logActivity(ctx, { action: 'create', entityType: 'payment', entityId: id, clientId: k.client_id, summary: `تسجيل دفعة ${fmtAmount(input.amount)} على «${k.title}» بتاريخ ${input.paidOn}` });
+    logActivity(ctx, { action: 'create', entityType: 'payment', entityId: id, clientId: k.client_id, summary: `تسجيل ${input.isAdvance ? 'دفعة مقدمة' : 'دفعة'} ${fmtAmount(input.amount)} على «${k.title}» بتاريخ ${input.paidOn}` });
   });
   return { id, totals: contractTotals(ctx, input.contractId) };
 }
@@ -416,12 +420,14 @@ export function clientFinanceSummary(ctx: Ctx, clientId: string) {
   requirePerm(ctx, 'fees.view');
   const contracts = listContracts(ctx, { clientId });
   let agreed = 0;
+  let advance = 0;
   let paid = 0;
   let remaining = 0;
   const percentage: { contractId: string; title: string; percentage: number | null; basis: string | null }[] = [];
   for (const k of contracts) {
     if (k.totals) {
       agreed += k.totals.agreed;
+      advance += k.totals.advance;
       paid += k.totals.paid;
       remaining += k.totals.remaining;
     }
@@ -433,6 +439,7 @@ export function clientFinanceSummary(ctx: Ctx, clientId: string) {
   return {
     contractCount: contracts.length,
     agreed,
+    advance,
     paid,
     remaining,
     percentage,

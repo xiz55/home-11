@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Alert, Checkbox, DateInput, Select, TextArea, TextInput, Ltr } from '../components/ui';
 import { api } from '../lib/api';
 import { useApi, useForm } from '../lib/hooks';
@@ -32,18 +33,18 @@ function CaseChecklist({ clientId, value, onChange, error }: { clientId: string;
   );
 }
 
-export function ContractForm({ clientId, initial, caseId, onClose }: { clientId?: string; initial?: Contract; caseId?: string; onClose: () => void }) {
+export function ContractForm({ clientId, initial, caseId, forCase, onClose }: { clientId?: string; initial?: Contract; caseId?: string; forCase?: { fileNo: string; title: string }; onClose: () => void }) {
   const clients = useClientOptions();
   const f = useForm({
     clientId: initial?.clientId ?? clientId ?? '',
     kind: initial?.kind ?? 'fee',
     parentContractId: initial?.parentContractId ?? '',
-    title: initial?.title ?? '',
+    title: initial?.title ?? (forCase ? `أتعاب قضية: ${forCase.title}` : ''),
     contractNo: initial?.contractNo ?? '',
     signedOn: initial?.signedOn ?? '',
     startDate: initial?.startDate ?? '',
     endDate: initial?.endDate ?? '',
-    scope: initial?.scope ?? '',
+    scope: initial?.scope ?? (forCase ? `أتعاب الترافع في القضية رقم ${forCase.fileNo} (${forCase.title}) فقط.` : ''),
     feeType: initial?.feeType ?? 'fixed',
     fixedAmount: amountToInput(initial?.fixedAmount),
     percentage: initial?.percentage?.toString() ?? '',
@@ -145,12 +146,18 @@ export function FeeItemForm({ contractId, initial, onClose }: { contractId: stri
   );
 }
 
-export function PaymentForm({ clientId, contractId, onClose, onSaved }: { clientId?: string; contractId?: string; onClose: () => void; onSaved?: (id: string, clientId: string) => void }) {
+export function PaymentForm({ clientId, contractId, caseId, onClose, onSaved }: { clientId?: string; contractId?: string; caseId?: string; onClose: () => void; onSaved?: (id: string, clientId: string) => void }) {
   const { lookup } = useSession();
   const clients = useClientOptions();
-  const f = useForm({ clientId: clientId ?? '', contractId: contractId ?? '', feeItemId: '', amount: '', paidOn: todayRiyadh(), method: '', referenceNo: '', notes: '' });
+  const f = useForm({ clientId: clientId ?? '', contractId: contractId ?? '', feeItemId: '', amount: '', paidOn: todayRiyadh(), method: '', referenceNo: '', notes: '', isAdvance: false });
   const v = f.values;
-  const contracts = useApi(() => (v.clientId ? api('contracts.list', { clientId: v.clientId }) : Promise.resolve([])), [v.clientId]);
+  // من صفحة القضية تُعرض عقود القضية فقط، ويُختار العقد تلقائيًا إن كان وحيدًا
+  const contracts = useApi(() => (caseId ? api('contracts.list', { caseId }) : v.clientId ? api('contracts.list', { clientId: v.clientId }) : Promise.resolve([])), [v.clientId, caseId]);
+  const payable = (contracts.data ?? []).filter((k) => k.feeType !== 'none');
+  useEffect(() => {
+    if (!v.contractId && payable.length === 1) f.set('contractId', payable[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payable.length]);
   const detail = useApi(() => (v.contractId ? api('contracts.get', { id: v.contractId }) : Promise.resolve(null)), [v.contractId]);
   return (
     <FormModal
@@ -160,7 +167,7 @@ export function PaymentForm({ clientId, contractId, onClose, onSaved }: { client
       onSubmit={async () => {
         const amt = amountField(f, 'amount', true);
         if (amt === 'invalid' || amt === null) return;
-        const r = await save(f, () => api('payments.create', { contractId: v.contractId, feeItemId: v.feeItemId || null, amount: amt, paidOn: v.paidOn, method: v.method || null, referenceNo: v.referenceNo || null, notes: v.notes || null }), 'سُجلت الدفعة');
+        const r = await save(f, () => api('payments.create', { contractId: v.contractId, feeItemId: v.feeItemId || null, amount: amt, paidOn: v.paidOn, method: v.method || null, referenceNo: v.referenceNo || null, notes: v.notes || null, isAdvance: v.isAdvance }), v.isAdvance ? 'سُجلت الدفعة المقدمة' : 'سُجلت الدفعة');
         if (r) {
           onSaved?.(r.id, v.clientId);
           onClose();
@@ -169,10 +176,10 @@ export function PaymentForm({ clientId, contractId, onClose, onSaved }: { client
     >
       <div className="form-grid">
         <Select label="العميل" required options={(clients.data ?? []).map((c) => ({ value: c.id, label: c.name }))} {...f.bind('clientId')} onChange={(x) => f.setMany({ clientId: x, contractId: '', feeItemId: '' })} disabled={!!clientId} />
-        <Select label="العقد" required options={(contracts.data ?? []).filter((k) => k.feeType !== 'none').map((k) => ({ value: k.id, label: k.title }))} {...f.bind('contractId')} onChange={(x) => f.setMany({ contractId: x, feeItemId: '' })} />
+        <Select label="العقد" required options={payable.map((k) => ({ value: k.id, label: k.title }))} {...f.bind('contractId')} onChange={(x) => f.setMany({ contractId: x, feeItemId: '' })} hint={caseId && payable.length === 0 ? 'حدّد أتعاب القضية أولًا' : undefined} />
         {detail.data?.contract.totals && (
           <div className="full help">
-            المتفق عليه <Ltr>{fmtAmount(detail.data.contract.totals.agreed)}</Ltr> — المدفوع <Ltr>{fmtAmount(detail.data.contract.totals.paid)}</Ltr> — المتبقي <Ltr>{fmtAmount(detail.data.contract.totals.remaining)}</Ltr>
+            المتفق عليه {fmtAmount(detail.data.contract.totals.agreed)} — المقدم {fmtAmount(detail.data.contract.totals.advance)} — المسدد {fmtAmount(detail.data.contract.totals.paid)} — المتبقي {fmtAmount(detail.data.contract.totals.remaining)}
             {detail.data.contract.sharedAcrossCases && ' (عقد شامل لعدة قضايا — الدفعة تُسجل على العقد مرة واحدة)'}
           </div>
         )}
@@ -183,6 +190,9 @@ export function PaymentForm({ clientId, contractId, onClose, onSaved }: { client
         <DateInput label="تاريخ الدفعة" required {...f.bind('paidOn')} onChange={(x) => f.set('paidOn', x)} />
         <Select label="طريقة الدفع" options={optsFromList(lookup('payment_methods'))} {...f.bind('method')} onChange={(x) => f.set('method', x)} />
         <TextInput label="رقم السند / المرجع" ltr {...f.bind('referenceNo')} onChange={(x) => f.set('referenceNo', x)} />
+        <div className="full">
+          <Checkbox label="دفعة مقدمة (عربون)" checked={v.isAdvance} onChange={(x) => f.set('isAdvance', x)} hint="تظهر في خانة «المقدم» وتُحسب ضمن المبلغ المسدد" />
+        </div>
         <TextArea className="full" label="ملاحظات" {...f.bind('notes')} onChange={(x) => f.set('notes', x)} rows={2} />
         <div className="full help">يمكنك إرفاق سند الدفع بعد الحفظ من قائمة الدفعات.</div>
       </div>

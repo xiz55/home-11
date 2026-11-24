@@ -232,12 +232,13 @@ function caseReport(ctx: Ctx, input: ReportInput) {
     body +=
       '<h2>العقود والأتعاب المرتبطة</h2>' +
       table(
-        ['العقد', 'النوع', 'نطاقه', 'المتفق عليه', 'المدفوع', 'المتبقي'],
+        ['العقد', 'النوع', 'نطاقه', 'مبلغ القضية / العقد', 'المقدم', 'المسدد', 'المتبقي'],
         ks.map((k) => [
           e(k.title) + (k.sharedAcrossCases ? `<br><span class="src">عقد شامل لـ ${k.cases.length} قضايا — المبالغ تخص العقد كاملًا ولا تُجمع لكل قضية</span>` : ''),
           e(labelOf(CONTRACT_KINDS, k.kind)),
           txt(k.scope),
           ltr(fmtAmount(k.totals?.agreed ?? 0)),
+          ltr(fmtAmount(k.totals?.advance ?? 0)),
           ltr(fmtAmount(k.totals?.paid ?? 0)),
           ltr(fmtAmount(k.totals?.remaining ?? 0)),
         ]),
@@ -353,10 +354,11 @@ function feesReport(ctx: Ctx, input: ReportInput) {
   );
   body += kv([
     ['الإجمالي المتفق عليه (أتعاب ثابتة)', ltr(fmtAmount(sum.agreed))],
-    ['إجمالي المدفوع', ltr(fmtAmount(sum.paid))],
+    ['المقدم (ضمن المسدد)', ltr(fmtAmount(sum.advance))],
+    ['إجمالي المسدد', ltr(fmtAmount(sum.paid))],
     ['المتبقي', ltr(fmtAmount(sum.remaining))],
   ]);
-  body += '<h2>الدفعات</h2>' + table(['التاريخ', 'العقد / البند', 'المبلغ', 'الطريقة', 'رقم السند', 'الحالة'], payments.map((p) => [ltr(fmtDate(p.paidOn)), e(p.contractTitle) + (p.feeItemTitle ? ' / ' + e(p.feeItemTitle) : ''), ltr(fmtAmount(p.amount)), e(p.method ?? '—'), ltr(p.referenceNo), p.voided ? `ملغاة: ${e(p.voidReason ?? '')}` : 'سارية']));
+  body += '<h2>الدفعات</h2>' + table(['التاريخ', 'العقد / البند', 'المبلغ', 'النوع', 'الطريقة', 'رقم السند', 'الحالة'], payments.map((p) => [ltr(fmtDate(p.paidOn)), e(p.contractTitle) + (p.feeItemTitle ? ' / ' + e(p.feeItemTitle) : ''), ltr(fmtAmount(p.amount)), p.isAdvance ? 'مقدم' : 'دفعة', e(p.method ?? '—'), ltr(p.referenceNo), p.voided ? `ملغاة: ${e(p.voidReason ?? '')}` : 'سارية']));
   body += '<h2>المصاريف</h2>' + table(['التاريخ', 'البيان', 'المبلغ', 'تُسترد', 'سُددت'], expenses.map((x) => [ltr(fmtDate(x.spentOn)), e(x.title), ltr(fmtAmount(x.amount)), x.recoverable ? 'نعم' : 'لا', x.reimbursedOn ? ltr(fmtDate(x.reimbursedOn)) : '—']));
   return {
     title: `كشف أتعاب — ${client.name}`,

@@ -302,6 +302,50 @@ describe('رحلة القبول الكاملة عبر الواجهة', { concurr
     await shot(win, '08-fees');
   });
 
+  it('13. جدول أتعاب القضية: مبلغ القضية والمقدم والمسدد والمتبقي', { timeout: 180000 }, async () => {
+    const { win } = A;
+    await nav(win, 'العملاء والشركات');
+    await win.getByRole('button', { name: 'إضافة عميل' }).click();
+    let m = modal(win);
+    await m.getByLabel('نوع العميل').selectOption('individual');
+    await m.getByLabel(L('الاسم')).fill('عميل الأتعاب الخيالي');
+    await saveModal(win);
+    await win.getByRole('heading', { name: 'عميل الأتعاب الخيالي' }).waitFor();
+    await win.getByRole('button', { name: 'إضافة قضية' }).first().click();
+    m = modal(win);
+    await m.getByLabel('عنوان القضية').fill('قضية مطالبة مالية خيالية');
+    await m.getByRole('checkbox', { name: 'تسجيل المرحلة الأولى الآن' }).uncheck();
+    await saveModal(win);
+    await win.getByRole('heading', { name: 'قضية مطالبة مالية خيالية' }).waitFor();
+    ids.feesCase = caseIdFromUrl(win);
+    const card = win.locator('.card').filter({ has: win.getByRole('heading', { name: 'أتعاب القضية' }) });
+    await card.getByRole('button', { name: 'تحديد أتعاب القضية' }).click();
+    m = modal(win);
+    assert.match(await m.getByLabel('عنوان العقد').inputValue(), /أتعاب قضية/);
+    await m.getByLabel('الأتعاب الثابتة (إجمالي العقد)').fill('10000');
+    await saveModal(win);
+    await expectToast(win, /سُجل العقد/);
+    await card.getByRole('button', { name: 'تسجيل دفعة' }).click();
+    m = modal(win);
+    await m.getByLabel(L('المبلغ')).fill('3000');
+    await m.getByRole('checkbox', { name: 'دفعة مقدمة (عربون)' }).check();
+    await saveModal(win);
+    await expectToast(win, /سُجلت الدفعة المقدمة/);
+    await card.getByRole('button', { name: 'تسجيل دفعة' }).click();
+    m = modal(win);
+    await m.getByLabel(L('المبلغ')).fill('2000');
+    await saveModal(win);
+    await expectToast(win, /سُجلت الدفعة/);
+    const row = card.locator('table.fee-mini tbody tr').first();
+    await row.getByText('5,000.00 ر.س').first().waitFor();
+    const cells = await row.locator('td').allInnerTexts();
+    assert.deepEqual(cells.slice(1), ['10,000.00 ر.س', '3,000.00 ر.س', '5,000.00 ر.س', '5,000.00 ر.س']);
+    await shot(win, '15-case-fees-table');
+    // القضية العمالية مرتبطة بعقد شامل: يظهر كذلك مع التنبيه بعدم التكرار
+    await go(win, `/cases/${ids.labor}`);
+    await win.getByText(/عقد شامل لـ 2 قضايا — المبالغ للعقد كاملًا/).waitFor();
+  });
+
   it('8. منع المستشار من العمليات والملفات غير المسموحة — بما فيها استدعاء IPC مباشرة', { timeout: 180000 }, async () => {
     const { win } = A;
     await nav(win, 'الإعدادات');

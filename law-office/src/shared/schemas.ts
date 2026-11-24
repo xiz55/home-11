@@ -549,6 +549,7 @@ export const paymentInput = z.object({
   method: optText(80),
   referenceNo: optText(120),
   notes: optText(2000),
+  isAdvance: z.boolean().default(false),
 });
 export const paymentVoidInput = z.object({ id, reason: reqText('سبب الإلغاء', 1000) });
 export const expenseInput = z.object({

@@ -530,6 +530,11 @@ CREATE TABLE integration_tokens (
 );
 `,
   },
+  {
+    version: 2,
+    name: 'payments: advance flag',
+    sql: `ALTER TABLE payments ADD COLUMN is_advance INTEGER NOT NULL DEFAULT 0;`,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

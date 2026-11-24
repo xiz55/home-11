@@ -418,7 +418,7 @@ function ClientFees({ clientId, p, onPay, onExpense }: { clientId: string; p: Pr
     <div className="stack g2">
       <div className="grid c4">
         <div className="card stat"><span className="label">المتفق عليه (ثابت)</span><span className="value" style={{ fontSize: 22 }}><Ltr>{fmtAmount(f.agreed)}</Ltr></span><span className="note">مجموع العقود المميزة — كل عقد مرة واحدة</span></div>
-        <div className="card stat"><span className="label">المدفوع</span><span className="value" style={{ fontSize: 22 }}><Ltr>{fmtAmount(f.paid)}</Ltr></span></div>
+        <div className="card stat"><span className="label">المسدد</span><span className="value" style={{ fontSize: 22 }}><Ltr>{fmtAmount(f.paid)}</Ltr></span><span className="note">منه مقدم {fmtAmount(f.advance)}</span></div>
         <div className="card stat"><span className="label">المتبقي</span><span className="value" style={{ fontSize: 22 }}><Ltr>{fmtAmount(f.remaining)}</Ltr></span></div>
         <div className="card stat"><span className="label">مصاريف مستردة غير مسددة</span><span className="value" style={{ fontSize: 22 }}><Ltr>{fmtAmount(f.expenses.outstandingRecoverable)}</Ltr></span></div>
       </div>
@@ -432,6 +432,7 @@ function ClientFees({ clientId, p, onPay, onExpense }: { clientId: string; p: Pr
             { key: 'date', header: 'التاريخ', sortValue: (r) => r.paidOn, render: (r) => <Ltr>{fmtDate(r.paidOn)}</Ltr> },
             { key: 'contract', header: 'العقد / البند', sortValue: (r) => r.contractTitle, render: (r) => `${r.contractTitle}${r.feeItemTitle ? ' / ' + r.feeItemTitle : ''}` },
             { key: 'amount', header: 'المبلغ', sortValue: (r) => r.amount, render: (r) => <Ltr>{fmtAmount(r.amount)}</Ltr> },
+            { key: 'kind', header: 'النوع', sortValue: (r) => (r.isAdvance ? 0 : 1), render: (r) => (r.isAdvance ? <Badge tone="info">مقدم</Badge> : <Badge tone="outline">دفعة</Badge>) },
             { key: 'method', header: 'الطريقة', sortValue: (r) => r.method ?? '', render: (r) => r.method ?? '—' },
             { key: 'ref', header: 'رقم السند', sortValue: (r) => r.referenceNo ?? '', render: (r) => <Ltr>{r.referenceNo}</Ltr> },
             { key: 'st', header: 'الحالة', render: (r) => (r.voided ? <Badge tone="danger">ملغاة: {r.voidReason}</Badge> : <Badge tone="success">سارية</Badge>) },
