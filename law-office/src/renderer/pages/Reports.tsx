@@ -6,6 +6,8 @@ import { api } from '../lib/api';
 import { useApi } from '../lib/hooks';
 import { useSession } from '../lib/session';
 import { addDays, todayRiyadh } from '../../shared/dates';
+import { Tabs } from '../components/ui';
+import { OfficeReportPanel } from './OfficeReport';
 
 type RType = 'case' | 'client' | 'hearings' | 'tasks' | 'fees';
 const TYPES: { key: RType; label: string; perm?: 'fees.view' }[] = [
@@ -17,6 +19,31 @@ const TYPES: { key: RType; label: string; perm?: 'fees.view' }[] = [
 ];
 
 export function ReportsPage() {
+  const [sp, setSp] = useSearchParams();
+  const { can } = useSession();
+  const section = sp.get('section') === 'office' || !can('reports.export') ? 'office' : 'client';
+  return (
+    <div>
+      <div className="page-head">
+        <div>
+          <h1>التقارير</h1>
+          <div className="sub">تقارير عربية قابلة للطباعة والحفظ PDF. تقارير العملاء منفصلة عن التقرير الإداري الداخلي للمكتب.</div>
+        </div>
+      </div>
+      <Tabs
+        tabs={[
+          { key: 'client', label: 'تقارير القضايا والعملاء', hidden: !can('reports.export') },
+          { key: 'office', label: 'التقرير الشامل للمكتب', hidden: !can('reports.office') },
+        ]}
+        value={section}
+        onChange={(k) => setSp(k === 'office' ? { section: 'office' } : {}, { replace: true })}
+      />
+      <div style={{ marginTop: 16 }}>{section === 'office' ? <OfficeReportPanel /> : <ClientReports />}</div>
+    </div>
+  );
+}
+
+function ClientReports() {
   const [sp] = useSearchParams();
   const { can, users } = useSession();
   const [type, setType] = useState<RType>((sp.get('type') as RType) ?? 'case');
@@ -49,12 +76,6 @@ export function ReportsPage() {
   if (!can('reports.export')) return <Alert tone="warning">لا تملك صلاحية استخراج التقارير.</Alert>;
   return (
     <div>
-      <div className="page-head">
-        <div>
-          <h1>التقارير</h1>
-          <div className="sub">تقارير عربية قابلة للطباعة والحفظ PDF، تتضمن تاريخ الاستخراج وآخر تحديث مسجل ومصادر الوقائع.</div>
-        </div>
-      </div>
       <div className="split" style={{ gridTemplateColumns: 'minmax(300px, 0.7fr) minmax(0, 1.3fr)' }}>
         <Card title="إعداد التقرير">
           <div className="stack g2">

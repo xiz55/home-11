@@ -3,7 +3,7 @@ import type { Ctx } from '../context';
 import { uuid } from '../context';
 import { AppError, forbidden, notFound } from '../errors';
 import { fmtAmount } from '../../shared/money';
-import type { ContractKind, ContractStatus, FeeType, PoaStatus } from '../../shared/constants';
+import { ADJUSTMENT_KINDS, type AdjustmentKind, type ContractKind, type ContractStatus, type FeeType, type PoaStatus } from '../../shared/constants';
 import { caseScope, clientAccess, hasPerm, requireCase, requireClient, requirePerm, requireUser, canAccessCase } from './access';
 import { logActivity } from './activity';
 
@@ -29,21 +29,33 @@ interface ContractRow {
   updated_at: string;
 }
 
-/** ملخص مالي لعقد واحد — مصدر الحقيقة الوحيد لحساب المدفوع والمتبقي. */
+/** ملخص مالي لعقد واحد — مصدر الحقيقة الوحيد لحساب المدفوع والمتبقي.
+ *  agreed: قيمة التعاقد الثابتة. realizedPercentage: أتعاب نسبية سُجّل تحققها واعتمادها كبنود مستقلة.
+ *  paid: صافي المستلم (الدفعات ناقص المبالغ المستردة). adjustments: الخصومات والتسويات (غير نقدية). */
 export function contractTotals(ctx: Ctx, contractId: string) {
   const k = ctx.db.get<{ fixed_amount: number | null; fee_type: FeeType }>('SELECT fixed_amount, fee_type FROM contracts WHERE id = ?', [contractId])!;
-  const items = ctx.db.get<{ s: number | null; n: number }>('SELECT sum(amount) AS s, count(*) AS n FROM fee_items WHERE contract_id = ?', [contractId])!;
-  const paid = ctx.db.get<{ s: number | null }>('SELECT sum(amount) AS s FROM payments WHERE contract_id = ? AND voided = 0', [contractId])!.s ?? 0;
+  const items = ctx.db.get<{ s: number | null; n: number }>("SELECT sum(amount) AS s, count(*) AS n FROM fee_items WHERE contract_id = ? AND item_kind = 'installment'", [contractId])!;
+  const realizedPercentage = ctx.db.get<{ s: number | null }>("SELECT sum(amount) AS s FROM fee_items WHERE contract_id = ? AND item_kind = 'percentage'", [contractId])!.s ?? 0;
+  const grossPaid = ctx.db.get<{ s: number | null }>('SELECT sum(amount) AS s FROM payments WHERE contract_id = ? AND voided = 0', [contractId])!.s ?? 0;
   // المقدم جزء من المسدد (دفعات معلّمة كدفعة مقدمة)
   const advance = ctx.db.get<{ s: number | null }>('SELECT sum(amount) AS s FROM payments WHERE contract_id = ? AND voided = 0 AND is_advance = 1', [contractId])!.s ?? 0;
+  const adj = ctx.db.all<{ kind: string; s: number }>('SELECT kind, sum(amount) AS s FROM contract_adjustments WHERE contract_id = ? AND voided = 0 GROUP BY kind', [contractId]);
+  const refunded = adj.find((a) => a.kind === 'refund')?.s ?? 0;
+  const adjustments = adj.filter((a) => a.kind !== 'refund').reduce((s, a) => s + a.s, 0);
   const hasFixed = k.fee_type === 'fixed' || k.fee_type === 'mixed';
   const agreed = hasFixed ? (k.fixed_amount ?? (items.n ? items.s ?? 0 : 0)) : 0;
+  const paid = grossPaid - refunded;
+  const balance = agreed + realizedPercentage - adjustments - paid;
   return {
     agreed,
+    realizedPercentage,
     advance,
+    grossPaid,
+    refunded,
+    adjustments,
     paid,
-    remaining: Math.max(agreed - paid, 0),
-    overpaid: Math.max(paid - agreed, 0),
+    remaining: Math.max(balance, 0),
+    overpaid: Math.max(-balance, 0),
     scheduleTotal: items.s ?? 0,
     scheduleMismatch: hasFixed && items.n > 0 && k.fixed_amount !== null && (items.s ?? 0) !== k.fixed_amount,
   };
@@ -117,18 +129,82 @@ export function getContract(ctx: Ctx, input: { id: string }) {
     contract: mapContract(ctx, r),
     feeItems: canFees
       ? ctx.db
-          .all<{ id: string; title: string; amount: number; due_date: string | null; notes: string | null }>('SELECT * FROM fee_items WHERE contract_id = ? ORDER BY sort_order, created_at', [input.id])
+          .all<{ id: string; title: string; amount: number; due_date: string | null; notes: string | null; item_kind: string; basis: string | null }>('SELECT * FROM fee_items WHERE contract_id = ? ORDER BY sort_order, created_at', [input.id])
           .map((i) => ({
             id: i.id,
             title: i.title,
             amount: i.amount,
+            itemKind: i.item_kind as 'installment' | 'percentage',
+            basis: i.basis,
             dueDate: i.due_date,
             notes: i.notes,
             paid: ctx.db.get<{ s: number | null }>('SELECT sum(amount) AS s FROM payments WHERE fee_item_id = ? AND voided = 0', [i.id])!.s ?? 0,
           }))
       : [],
     payments: canFees ? listPayments(ctx, { contractId: input.id }) : [],
+    adjustments: canFees ? listAdjustments(ctx, input.id) : [],
   };
+}
+
+export function listAdjustments(ctx: Ctx, contractId: string) {
+  requirePerm(ctx, 'fees.view');
+  return ctx.db
+    .all<Record<string, string | number | null>>(
+      `SELECT a.*, u.display_name AS by_name, k.ref_no AS consultation_ref FROM contract_adjustments a LEFT JOIN users u ON u.id = a.created_by
+       LEFT JOIN consultations k ON k.id = a.consultation_id WHERE a.contract_id = ? ORDER BY a.adjusted_on DESC, a.created_at DESC`,
+      [contractId],
+    )
+    .map((a) => ({
+      id: String(a.id),
+      kind: a.kind as AdjustmentKind,
+      amount: Number(a.amount),
+      adjustedOn: String(a.adjusted_on),
+      reason: String(a.reason),
+      method: a.method as string | null,
+      referenceNo: a.reference_no as string | null,
+      consultationId: a.consultation_id as string | null,
+      consultationRef: a.consultation_ref as string | null,
+      voided: !!a.voided,
+      voidReason: a.void_reason as string | null,
+      byName: a.by_name as string | null,
+    }));
+}
+
+/** خصم أو تسوية أو استرداد على عقد — يُسجل صراحة مع السبب ولا يُعدل الدفعات الأصلية. */
+export function createAdjustment(ctx: Ctx, input: { contractId: string; kind: 'discount' | 'refund'; amount: number; adjustedOn: string; reason: string; method: string | null; referenceNo: string | null }) {
+  requirePerm(ctx, 'fees.manage', 'لا تملك صلاحية تسجيل التسويات');
+  const k = ctx.db.get<{ id: string; client_id: string; title: string }>('SELECT id, client_id, title FROM contracts WHERE id = ?', [input.contractId]);
+  if (!k) throw notFound('العقد');
+  if (!contractVisible(ctx, k)) throw forbidden();
+  if (input.kind === 'refund') {
+    const t = contractTotals(ctx, input.contractId);
+    if (input.amount > t.paid) throw new AppError('VALIDATION', `المبلغ المسترد أكبر من صافي المستلم على العقد (${fmtAmount(t.paid)})`, { amount: 'أكبر من المستلم' });
+  }
+  const id = uuid();
+  const now = ctx.now().toISOString();
+  ctx.db.tx(() => {
+    ctx.db.run(
+      `INSERT INTO contract_adjustments (id, contract_id, client_id, kind, amount, adjusted_on, reason, method, reference_no, created_by, created_at, updated_by, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, input.contractId, k.client_id, input.kind, input.amount, input.adjustedOn, input.reason, input.method, input.referenceNo, ctx.user!.id, now, ctx.user!.id, now],
+    );
+    logActivity(ctx, { action: 'create', entityType: 'contract_adjustment', entityId: id, clientId: k.client_id, summary: `${ADJUSTMENT_KINDS[input.kind].label} ${fmtAmount(input.amount)} على «${k.title}» بتاريخ ${input.adjustedOn}: ${input.reason}` });
+  });
+  return { id, totals: contractTotals(ctx, input.contractId) };
+}
+
+export function voidAdjustment(ctx: Ctx, input: { id: string; reason: string }) {
+  requirePerm(ctx, 'fees.manage');
+  const a = ctx.db.get<{ contract_id: string; client_id: string; amount: number; kind: AdjustmentKind; voided: number }>('SELECT * FROM contract_adjustments WHERE id = ?', [input.id]);
+  if (!a) throw notFound('التسوية');
+  requireClient(ctx, a.client_id, 'basic');
+  if (a.voided) return { ok: true };
+  const now = ctx.now().toISOString();
+  ctx.db.tx(() => {
+    ctx.db.run('UPDATE contract_adjustments SET voided = 1, void_reason = ?, voided_at = ?, voided_by = ?, updated_by = ?, updated_at = ? WHERE id = ?', [input.reason, now, ctx.user!.id, ctx.user!.id, now, input.id]);
+    logActivity(ctx, { action: 'void', entityType: 'contract_adjustment', entityId: input.id, clientId: a.client_id, summary: `إلغاء ${ADJUSTMENT_KINDS[a.kind].label} ${fmtAmount(a.amount)}: ${input.reason}` });
+  });
+  return { ok: true };
 }
 
 interface ContractInput {
@@ -241,27 +317,32 @@ export function updateContract(ctx: Ctx, input: ContractInput & { id: string }) 
   return { ok: true };
 }
 
-export function saveFeeItem(ctx: Ctx, input: { id: string | null; contractId: string; title: string; amount: number; dueDate: string | null; notes: string | null }) {
+export function saveFeeItem(ctx: Ctx, input: { id: string | null; contractId: string; title: string; amount: number; dueDate: string | null; notes: string | null; itemKind?: 'installment' | 'percentage'; basis?: string | null }) {
   requirePerm(ctx, 'fees.manage');
-  const k = ctx.db.get<{ client_id: string; title: string }>('SELECT client_id, title FROM contracts WHERE id = ?', [input.contractId]);
+  const k = ctx.db.get<{ client_id: string; title: string; fee_type: FeeType }>('SELECT client_id, title, fee_type FROM contracts WHERE id = ?', [input.contractId]);
   if (!k) throw notFound('العقد');
   requireClient(ctx, k.client_id, 'full');
+  const itemKind = input.itemKind ?? 'installment';
+  if (itemKind === 'percentage') {
+    if (k.fee_type !== 'percentage' && k.fee_type !== 'mixed') throw new AppError('VALIDATION', 'العقد لا يتضمن أتعابًا نسبية', { itemKind: 'غير متاح لهذا العقد' });
+    if (!input.basis) throw new AppError('VALIDATION', 'اذكر أساس تحقق الأتعاب النسبية واعتمادها (مثل الحكم أو المبلغ المحصل)', { basis: 'أساس الاستحقاق مطلوب' });
+  }
   const now = ctx.now().toISOString();
   let id = input.id;
   ctx.db.tx(() => {
     if (id) {
       const ex = ctx.db.get<{ contract_id: string }>('SELECT contract_id FROM fee_items WHERE id = ?', [id]);
       if (!ex || ex.contract_id !== input.contractId) throw notFound('البند');
-      ctx.db.run('UPDATE fee_items SET title = ?, amount = ?, due_date = ?, notes = ?, updated_by = ?, updated_at = ? WHERE id = ?', [input.title, input.amount, input.dueDate, input.notes, ctx.user!.id, now, id]);
+      ctx.db.run('UPDATE fee_items SET title = ?, amount = ?, due_date = ?, notes = ?, item_kind = ?, basis = ?, updated_by = ?, updated_at = ? WHERE id = ?', [input.title, input.amount, input.dueDate, input.notes, itemKind, input.basis ?? null, ctx.user!.id, now, id]);
     } else {
       id = uuid();
       const max = ctx.db.get<{ m: number | null }>('SELECT max(sort_order) AS m FROM fee_items WHERE contract_id = ?', [input.contractId]);
       ctx.db.run(
-        'INSERT INTO fee_items (id, contract_id, title, amount, due_date, notes, sort_order, created_by, created_at, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [id, input.contractId, input.title, input.amount, input.dueDate, input.notes, (max?.m ?? 0) + 10, ctx.user!.id, now, ctx.user!.id, now],
+        'INSERT INTO fee_items (id, contract_id, title, amount, due_date, notes, item_kind, basis, sort_order, created_by, created_at, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [id, input.contractId, input.title, input.amount, input.dueDate, input.notes, itemKind, input.basis ?? null, (max?.m ?? 0) + 10, ctx.user!.id, now, ctx.user!.id, now],
       );
     }
-    logActivity(ctx, { action: input.id ? 'update' : 'create', entityType: 'fee_item', entityId: id, clientId: k.client_id, summary: `بند مالي في «${k.title}»: ${input.title} — ${fmtAmount(input.amount)}` });
+    logActivity(ctx, { action: input.id ? 'update' : 'create', entityType: 'fee_item', entityId: id, clientId: k.client_id, summary: `${itemKind === 'percentage' ? 'أتعاب نسبية متحققة' : 'بند مالي'} في «${k.title}»: ${input.title} — ${fmtAmount(input.amount)}${input.basis ? ' — الأساس: ' + input.basis : ''}` });
   });
   return { id };
 }
@@ -423,6 +504,9 @@ export function clientFinanceSummary(ctx: Ctx, clientId: string) {
   let advance = 0;
   let paid = 0;
   let remaining = 0;
+  let adjustments = 0;
+  let refunded = 0;
+  let realizedPercentage = 0;
   const percentage: { contractId: string; title: string; percentage: number | null; basis: string | null }[] = [];
   for (const k of contracts) {
     if (k.totals) {
@@ -430,6 +514,9 @@ export function clientFinanceSummary(ctx: Ctx, clientId: string) {
       advance += k.totals.advance;
       paid += k.totals.paid;
       remaining += k.totals.remaining;
+      adjustments += k.totals.adjustments;
+      refunded += k.totals.refunded;
+      realizedPercentage += k.totals.realizedPercentage;
     }
     if (k.feeType === 'percentage' || k.feeType === 'mixed') percentage.push({ contractId: k.id, title: k.title, percentage: k.percentage, basis: k.percentageBasis });
   }
@@ -442,6 +529,9 @@ export function clientFinanceSummary(ctx: Ctx, clientId: string) {
     advance,
     paid,
     remaining,
+    adjustments,
+    refunded,
+    realizedPercentage,
     percentage,
     expenses: { total: expTotal, outstandingRecoverable: expOutstanding, count: expenses.length },
   };

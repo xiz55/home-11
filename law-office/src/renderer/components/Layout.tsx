@@ -27,6 +27,7 @@ import {
   CalendarPlus,
   Banknote,
   ClipboardPlus,
+  MessagesSquare,
 } from 'lucide-react';
 import { Button, Dropdown, Modal, Select, toast, Ltr } from './ui';
 import { api, invalidate } from '../lib/api';
@@ -38,6 +39,7 @@ import { DocumentAttachForm } from '../forms/docs';
 import { PaymentForm, TaskForm } from '../forms/finance';
 import { useCaseLinks } from '../forms/common';
 import { ChangePasswordForm } from '../pages/settingsForms';
+import { ConsultationForm, MeetingForm } from '../forms/appointments';
 import { fmtDateTime } from '../../shared/dates';
 
 const NAV = [
@@ -45,14 +47,15 @@ const NAV = [
   { to: '/clients', label: 'العملاء والشركات', icon: Building2 },
   { to: '/cases', label: 'القضايا', icon: Briefcase },
   { to: '/calendar', label: 'التقويم والجلسات', icon: CalendarDays },
+  { to: '/appointments', label: 'الاستشارات والاجتماعات', icon: MessagesSquare },
   { to: '/tasks', label: 'المهام', icon: ListChecks },
   { to: '/documents', label: 'المستندات والمذكرات', icon: FileText },
   { to: '/fees', label: 'الأتعاب', icon: Wallet, perm: 'fees.view' as const },
-  { to: '/reports', label: 'التقارير', icon: BarChart3, perm: 'reports.export' as const },
+  { to: '/reports', label: 'التقارير', icon: BarChart3, perm: ['reports.export', 'reports.office'] as const },
   { to: '/settings', label: 'الإعدادات', icon: Settings },
 ];
 
-type QuickKind = 'client' | 'case' | 'hearing' | 'minutes' | 'memo' | 'judgment' | 'task' | 'document' | 'payment';
+type QuickKind = 'client' | 'case' | 'hearing' | 'minutes' | 'memo' | 'judgment' | 'task' | 'document' | 'payment' | 'consultation' | 'meeting';
 
 /** يختار المستخدم القضية أولًا ثم يظهر النموذج المرتبط بها. */
 function CaseScoped({ kind, onClose }: { kind: 'hearing' | 'minutes' | 'memo' | 'judgment'; onClose: () => void }) {
@@ -213,7 +216,7 @@ export function Layout() {
           <div className="name" title={state?.officeName}>{state?.officeName}</div>
         </div>
         <nav>
-          {NAV.filter((n) => !n.perm || can(n.perm)).map((n) => (
+          {NAV.filter((n) => !n.perm || (Array.isArray(n.perm) ? n.perm.some((p) => can(p)) : can(n.perm as never))).map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => `navlink ${isActive ? 'active' : ''}`} data-tip={n.label} aria-label={n.label} title={collapsed ? n.label : undefined}>
               <n.icon />
               <span className="nav-label">{n.label}</span>
@@ -273,6 +276,16 @@ export function Layout() {
                 <button onClick={() => { close(); setQuick('task'); }}>
                   <ListChecks /> إضافة مهمة
                 </button>
+                {can('consultations.manage') && (
+                  <>
+                    <button onClick={() => { close(); setQuick('consultation'); }}>
+                      <MessagesSquare /> إضافة استشارة
+                    </button>
+                    <button onClick={() => { close(); setQuick('meeting'); }}>
+                      <UserPlus /> إضافة اجتماع
+                    </button>
+                  </>
+                )}
                 <button onClick={() => { close(); setQuick('document'); }}>
                   <FilePlus2 /> إرفاق مستند
                 </button>
@@ -327,6 +340,8 @@ export function Layout() {
       {quick === 'case' && <CaseForm onClose={() => setQuick(null)} onSaved={(id) => navigate(`/cases/${id}`)} />}
       {(quick === 'hearing' || quick === 'minutes' || quick === 'memo' || quick === 'judgment') && <CaseScoped kind={quick} onClose={() => setQuick(null)} />}
       {quick === 'task' && <TaskForm onClose={() => setQuick(null)} />}
+      {quick === 'consultation' && <ConsultationForm onClose={() => setQuick(null)} onSaved={(id) => navigate(`/appointments/consultations/${id}`)} />}
+      {quick === 'meeting' && <MeetingForm onClose={() => setQuick(null)} onSaved={(id) => navigate(`/appointments/meetings/${id}`)} />}
       {quick === 'document' && <DocumentAttachForm onClose={() => setQuick(null)} />}
       {quick === 'payment' && <PaymentForm onClose={() => setQuick(null)} onSaved={() => toast.info('يمكنك إرفاق سند الدفع من صفحة الأتعاب')} />}
       {pw && <ChangePasswordForm onClose={() => setPw(false)} />}

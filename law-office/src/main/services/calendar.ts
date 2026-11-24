@@ -1,12 +1,16 @@
 import type { Ctx } from '../context';
 import { addDays, riyadhToUtcIso, todayRiyadh, utcIsoToRiyadh, diffDays } from '../../shared/dates';
-import { caseScope, hasPerm, linkedScope, requireUser } from './access';
+import { caseScope, hasPerm, requireUser } from './access';
 import { officeFinanceSummary } from './finance';
 import { readSetting } from './settings';
+import { taskAccessSql } from './tasks';
+import { apptCalendarEvents, appointmentsOverview } from './appointments';
 
 export interface CalendarEvent {
   id: string;
-  kind: 'hearing' | 'task' | 'deadline';
+  kind: 'hearing' | 'task' | 'deadline' | 'consultation' | 'meeting';
+  refNo?: string | null;
+  method?: string | null;
   title: string;
   date: string;
   time: string | null;
@@ -73,8 +77,8 @@ export function calendarEvents(
       stageType: h.stage_type as string,
     });
   }
-  const tscope = linkedScope(ctx, 't.client_id', 't.case_id');
-  const tp: Record<string, unknown> = { ...tscope.params, from: input.from, to: input.to, me: u.id };
+  const tacc = taskAccessSql(ctx);
+  const tp: Record<string, unknown> = { ...tacc.params, from: input.from, to: input.to, me: u.id };
   const tex: string[] = [];
   if (input.clientId) {
     tex.push('t.client_id = :clientId');
@@ -88,7 +92,7 @@ export function calendarEvents(
     tex.push('t.assignee_user_id = :resp');
     tp.resp = input.responsibleUserId;
   }
-  const taskAccess = u.role === 'owner' ? '1=1' : `((t.client_id IS NULL AND t.case_id IS NULL AND (t.assignee_user_id = :me OR t.created_by = :me)) OR ${tscope.sql})`;
+  const taskAccess = tacc.sql;
   for (const t of ctx.db.all<Record<string, string | null>>(
     `SELECT t.id, t.title, t.due_date, t.due_time, t.status, t.case_id, c.file_no, c.title AS case_title, t.client_id, cl.name AS client_name, au.display_name AS assignee
      FROM tasks t LEFT JOIN cases c ON c.id = t.case_id LEFT JOIN clients cl ON cl.id = t.client_id LEFT JOIN users au ON au.id = t.assignee_user_id
@@ -142,6 +146,29 @@ export function calendarEvents(
       });
     }
   }
+  for (const a of apptCalendarEvents(ctx, input)) {
+    if (input.includeUnconfirmed === false && a.status === 'pending') continue;
+    out.push({
+      id: a.id,
+      kind: a.kind,
+      title: a.title,
+      date: a.date,
+      time: a.time,
+      startsAt: a.startsAt,
+      caseId: a.caseId,
+      fileNo: null,
+      caseTitle: null,
+      clientId: a.clientId,
+      clientName: a.clientName,
+      status: a.status,
+      confirmed: a.status !== 'pending',
+      responsible: a.responsible,
+      location: null,
+      stageType: null,
+      refNo: a.refNo,
+      method: a.method,
+    });
+  }
   out.sort((a, b) => (a.date + (a.time ?? '99:99')).localeCompare(b.date + (b.time ?? '99:99')));
   return out;
 }
@@ -153,6 +180,8 @@ export function upcomingForCases(ctx: Ctx, caseIds: string[], limit: number) {
   const evs = calendarEvents(ctx, { from: today, to: addDays(today, 365) }).filter(
     (e) =>
       e.caseId &&
+      e.kind !== 'consultation' &&
+      e.kind !== 'meeting' &&
       caseIds.includes(e.caseId) &&
       ((e.kind === 'hearing' && e.status === 'scheduled' && (e.startsAt ?? '') >= nowIso) || (e.kind === 'task' && e.status !== 'done') || (e.kind === 'deadline' && e.status === 'open')),
   );
@@ -167,11 +196,16 @@ export function dashboard(ctx: Ctx) {
   const activeCases = ctx.db.get<{ n: number }>(`SELECT count(*) AS n FROM cases c WHERE c.status = 'open' AND c.archived = 0 AND ${scope.sql}`, scope.params)!.n;
   const week = calendarEvents(ctx, { from: today, to: addDays(today, 14) });
   const todayHearings = week.filter((e) => e.kind === 'hearing' && e.date === today && e.status !== 'cancelled');
+  const todayAppointments = week.filter((e) => (e.kind === 'consultation' || e.kind === 'meeting') && e.date === today && e.status !== 'cancelled');
   const upcoming = week.filter(
-    (e) => (e.kind === 'hearing' && e.status === 'scheduled' && (e.startsAt ?? '') >= nowIso) || (e.kind === 'deadline' && e.status === 'open') || (e.kind === 'task' && e.status !== 'done'),
+    (e) =>
+      (e.kind === 'hearing' && e.status === 'scheduled' && (e.startsAt ?? '') >= nowIso) ||
+      (e.kind === 'deadline' && e.status === 'open') ||
+      (e.kind === 'task' && e.status !== 'done') ||
+      ((e.kind === 'consultation' || e.kind === 'meeting') && (e.status === 'pending' || e.status === 'confirmed') && (e.startsAt ?? '') >= nowIso),
   );
-  const tscope = linkedScope(ctx, 't.client_id', 't.case_id');
-  const taskAccess = u.role === 'owner' ? '1=1' : `((t.client_id IS NULL AND t.case_id IS NULL AND (t.assignee_user_id = :me OR t.created_by = :me)) OR ${tscope.sql})`;
+  const tscope = taskAccessSql(ctx);
+  const taskAccess = tscope.sql;
   const overdueTasks = ctx.db
     .all<Record<string, string | null>>(
       `SELECT t.id, t.title, t.due_date, t.priority, t.status, t.case_id, c.file_no, c.title AS case_title, au.display_name AS assignee FROM tasks t
@@ -201,7 +235,9 @@ export function dashboard(ctx: Ctx) {
   const backupDue = u.role === 'owner' && (!lastBackupAt || diffDays(today, todayRiyadh(new Date(lastBackupAt))) >= reminderDays);
   return {
     today,
-    counts: { activeCases, todayHearings: todayHearings.length, overdueTasks: overdueTasks.length },
+    counts: { activeCases, todayHearings: todayHearings.length, overdueTasks: overdueTasks.length, todayAppointments: todayAppointments.length },
+    todayAppointments,
+    appointments: appointmentsOverview(ctx).counts,
     finance: canFees ? officeFinanceSummary(ctx) : null,
     todayHearings,
     upcoming,

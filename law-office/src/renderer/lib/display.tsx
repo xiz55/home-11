@@ -19,7 +19,17 @@ export const EVENT_KIND: Record<string, { label: string; tone: 'info' | 'neutral
   task: { label: 'مهمة', tone: 'neutral' },
   deadline: { label: 'موعد إجرائي', tone: 'warning' },
   manual: { label: 'إجراء تالٍ', tone: 'neutral' },
+  consultation: { label: 'استشارة', tone: 'neutral' },
+  meeting: { label: 'اجتماع', tone: 'neutral' },
 };
+
+/** مسار فتح موعد من التقويم أو اللوحة. */
+export function eventPath(e: { kind: string; id: string; caseId: string | null }): string | null {
+  if (e.kind === 'consultation') return `/appointments/consultations/${e.id}`;
+  if (e.kind === 'meeting') return `/appointments/meetings/${e.id}`;
+  if (!e.caseId) return null;
+  return e.kind === 'hearing' ? `/cases/${e.caseId}?tab=stages&hearing=${e.id}` : `/cases/${e.caseId}`;
+}
 
 export function NextEventCell({ ev }: { ev: { label: string; at: string; isDateOnly: boolean; confirmed: boolean; overdue: boolean; kind: string; responsible?: string | null } | null }) {
   if (!ev) return <span className="muted">لا يوجد موعد مسجل</span>;

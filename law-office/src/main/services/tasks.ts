@@ -6,6 +6,23 @@ import { likeEscape, searchTokens } from '../../shared/text';
 import { TASK_STATUSES, type Priority, type TaskStatus } from '../../shared/constants';
 import { grantCase, isOwner, linkedScope, requireCase, requireCaseWritable, requireClient, requireUser } from './access';
 import { logActivity } from './activity';
+import { apptScope, requireConsultation, requireMeeting } from './appointments';
+
+/** المهام المرئية: المالك كل شيء؛ غيره: المسندة إليه أو التي أنشأها، ومهام ملفاته، ومهام الاستشارات والاجتماعات المتاحة له. */
+export function taskAccessSql(ctx: Ctx, alias = 't'): { sql: string; params: Record<string, unknown> } {
+  const u = requireUser(ctx);
+  if (u.role === 'owner') return { sql: '1=1', params: {} };
+  const scope = linkedScope(ctx, `${alias}.client_id`, `${alias}.case_id`);
+  const k = apptScope(ctx, 'consultations', 'tk');
+  const m = apptScope(ctx, 'meetings', 'tm');
+  return {
+    sql: `(${alias}.assignee_user_id = :ta_me OR ${alias}.created_by = :ta_me
+      OR (${alias}.client_id IS NOT NULL OR ${alias}.case_id IS NOT NULL) AND ${scope.sql}
+      OR (${alias}.meeting_id IS NOT NULL AND ${alias}.meeting_id IN (SELECT tm.id FROM meetings tm WHERE ${m.sql}))
+      OR (${alias}.consultation_id IS NOT NULL AND ${alias}.consultation_id IN (SELECT tk.id FROM consultations tk WHERE ${k.sql})))`,
+    params: { ...scope.params, ...k.params, ...m.params, ta_me: u.id },
+  };
+}
 import { syncTaskReminder } from './reminders';
 
 interface TaskInput {
@@ -15,6 +32,8 @@ interface TaskInput {
   caseId: string | null;
   stageId: string | null;
   hearingId: string | null;
+  consultationId?: string | null;
+  meetingId?: string | null;
   assigneeUserId: string | null;
   dueDate: string | null;
   dueTime: string | null;
@@ -23,14 +42,18 @@ interface TaskInput {
 }
 
 function normalizeTaskLinks(ctx: Ctx, input: TaskInput): TaskInput {
-  const out = { ...input };
+  const out = { ...input, consultationId: input.consultationId ?? null, meetingId: input.meetingId ?? null };
+  // المهمة المرتبطة باستشارة أو اجتماع تُتاح عبر صلاحية الموعد حتى دون قضية
+  if (out.consultationId) requireConsultation(ctx, out.consultationId);
+  if (out.meetingId) requireMeeting(ctx, out.meetingId);
+  const apptLinked = !!(out.consultationId || out.meetingId);
   if (out.caseId) {
     const c = requireCaseWritable(ctx, out.caseId);
     if (out.clientId && out.clientId !== c.client_id) throw new AppError('VALIDATION', 'القضية لا تتبع العميل المختار', { caseId: 'اختيار غير صالح' });
     out.clientId = c.client_id;
   } else if (out.clientId) {
     requireClient(ctx, out.clientId, 'full');
-  } else if (!isOwner(ctx)) {
+  } else if (!isOwner(ctx) && !apptLinked) {
     // مهمة عامة للمكتب — يتيحها المالك فقط حتى تبقى مهام المستشار ضمن ملفاته
     throw new AppError('VALIDATION', 'اختر العميل أو القضية المرتبطة بالمهمة', { caseId: 'اختر القضية أو العميل' });
   }
@@ -59,10 +82,10 @@ export function createTask(ctx: Ctx, input: TaskInput) {
   const now = ctx.now().toISOString();
   ctx.db.tx(() => {
     ctx.db.run(
-      `INSERT INTO tasks (id, title, description, client_id, case_id, stage_id, hearing_id, assignee_user_id, due_date, due_time, priority, status, completed_at, completed_by,
-         created_by, created_at, updated_by, updated_at)
-       VALUES (:id, :title, :description, :client_id, :case_id, :stage_id, :hearing_id, :assignee, :due_date, :due_time, :priority, :status, :completed_at, :completed_by,
-         :uid, :now, :uid, :now)`,
+      `INSERT INTO tasks (id, title, description, client_id, case_id, stage_id, hearing_id, consultation_id, meeting_id, assignee_user_id, due_date, due_time, priority, status,
+         completed_at, completed_by, created_by, created_at, updated_by, updated_at)
+       VALUES (:id, :title, :description, :client_id, :case_id, :stage_id, :hearing_id, :consultation_id, :meeting_id, :assignee, :due_date, :due_time, :priority, :status,
+         :completed_at, :completed_by, :uid, :now, :uid, :now)`,
       {
         id,
         title: t.title,
@@ -71,6 +94,8 @@ export function createTask(ctx: Ctx, input: TaskInput) {
         case_id: t.caseId,
         stage_id: t.stageId,
         hearing_id: t.hearingId,
+        consultation_id: t.consultationId,
+        meeting_id: t.meetingId,
         assignee: t.assigneeUserId,
         due_date: t.dueDate,
         due_time: t.dueTime,
@@ -90,9 +115,12 @@ export function createTask(ctx: Ctx, input: TaskInput) {
 }
 
 function requireTask(ctx: Ctx, id: string) {
-  const t = ctx.db.get<{ id: string; client_id: string | null; case_id: string | null; title: string; status: string; created_by: string; assignee_user_id: string | null }>('SELECT * FROM tasks WHERE id = ?', [id]);
+  const t = ctx.db.get<{ id: string; client_id: string | null; case_id: string | null; consultation_id: string | null; meeting_id: string | null; title: string; status: string; created_by: string; assignee_user_id: string | null }>('SELECT * FROM tasks WHERE id = ?', [id]);
   if (!t) throw notFound('المهمة');
-  if (t.case_id) requireCase(ctx, t.case_id);
+  if (!isOwner(ctx) && (t.assignee_user_id === ctx.user!.id || t.created_by === ctx.user!.id)) return t;
+  if (t.meeting_id) requireMeeting(ctx, t.meeting_id);
+  else if (t.consultation_id) requireConsultation(ctx, t.consultation_id);
+  else if (t.case_id) requireCase(ctx, t.case_id);
   else if (t.client_id) requireClient(ctx, t.client_id, 'full');
   else if (!isOwner(ctx) && t.assignee_user_id !== ctx.user!.id && t.created_by !== ctx.user!.id) throw forbidden();
   return t;
@@ -106,6 +134,7 @@ export function updateTask(ctx: Ctx, input: TaskInput & { id: string }) {
   ctx.db.tx(() => {
     ctx.db.run(
       `UPDATE tasks SET title = :title, description = :description, client_id = :client_id, case_id = :case_id, stage_id = :stage_id, hearing_id = :hearing_id,
+         consultation_id = :consultation_id, meeting_id = :meeting_id,
          assignee_user_id = :assignee, due_date = :due_date, due_time = :due_time, priority = :priority, status = :status,
          completed_at = CASE WHEN :status = 'done' THEN coalesce(completed_at, :now) ELSE NULL END,
          completed_by = CASE WHEN :status = 'done' THEN coalesce(completed_by, :uid) ELSE NULL END,
@@ -118,6 +147,8 @@ export function updateTask(ctx: Ctx, input: TaskInput & { id: string }) {
         case_id: t.caseId,
         stage_id: t.stageId,
         hearing_id: t.hearingId,
+        consultation_id: t.consultationId,
+        meeting_id: t.meetingId,
         assignee: t.assigneeUserId,
         due_date: t.dueDate,
         due_time: t.dueTime,
@@ -160,14 +191,12 @@ export function setTaskStatus(ctx: Ctx, input: { id: string; status: TaskStatus 
 
 export function listTasks(
   ctx: Ctx,
-  input: { caseId?: string | null; clientId?: string | null; assigneeUserId?: string | null; status?: string; q?: string | null },
+  input: { caseId?: string | null; clientId?: string | null; meetingId?: string | null; consultationId?: string | null; assigneeUserId?: string | null; status?: string; q?: string | null },
 ) {
   const u = requireUser(ctx);
-  const scope = linkedScope(ctx, 't.client_id', 't.case_id');
-  const where = [
-    u.role === 'owner' ? '1=1' : `((t.client_id IS NULL AND t.case_id IS NULL AND (t.assignee_user_id = :me OR t.created_by = :me)) OR ${scope.sql})`,
-  ];
-  const p: Record<string, unknown> = { ...scope.params, me: u.id, today: todayRiyadh(ctx.now()) };
+  const acc = taskAccessSql(ctx);
+  const where = [acc.sql];
+  const p: Record<string, unknown> = { ...acc.params, me: u.id, today: todayRiyadh(ctx.now()) };
   if (input.caseId) {
     where.push('t.case_id = :caseId');
     p.caseId = input.caseId;
@@ -175,6 +204,14 @@ export function listTasks(
   if (input.clientId) {
     where.push('t.client_id = :clientId');
     p.clientId = input.clientId;
+  }
+  if (input.meetingId) {
+    where.push('t.meeting_id = :meetingId');
+    p.meetingId = input.meetingId;
+  }
+  if (input.consultationId) {
+    where.push('t.consultation_id = :consultationId');
+    p.consultationId = input.consultationId;
   }
   if (input.assigneeUserId) {
     where.push('t.assignee_user_id = :assignee');
@@ -193,8 +230,9 @@ export function listTasks(
   });
   return ctx.db
     .all<Record<string, string | null>>(
-      `SELECT t.*, u.display_name AS assignee_name, c.file_no, c.title AS case_title, cl.name AS client_name
+      `SELECT t.*, u.display_name AS assignee_name, c.file_no, c.title AS case_title, cl.name AS client_name, mt.ref_no AS meeting_ref, ko.ref_no AS consultation_ref
        FROM tasks t LEFT JOIN users u ON u.id = t.assignee_user_id LEFT JOIN cases c ON c.id = t.case_id LEFT JOIN clients cl ON cl.id = t.client_id
+       LEFT JOIN meetings mt ON mt.id = t.meeting_id LEFT JOIN consultations ko ON ko.id = t.consultation_id
        WHERE ${where.join(' AND ')}
        ORDER BY CASE WHEN t.status = 'done' THEN 1 ELSE 0 END, t.due_date IS NULL, t.due_date, t.due_time, t.created_at DESC LIMIT 3000`,
       p,
@@ -211,6 +249,10 @@ export function listTasks(
       stageId: t.stage_id,
       hearingId: t.hearing_id,
       hearingRequestId: t.hearing_request_id,
+      meetingId: t.meeting_id,
+      meetingRef: t.meeting_ref,
+      consultationId: t.consultation_id,
+      consultationRef: t.consultation_ref,
       assigneeUserId: t.assignee_user_id,
       assigneeName: t.assignee_name,
       dueDate: t.due_date,

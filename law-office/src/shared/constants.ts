@@ -33,10 +33,14 @@ export const PERMISSIONS = {
   'fees.view': 'الاطلاع على الأتعاب والدفعات والمصاريف',
   'fees.manage': 'تسجيل العقود المالية والدفعات والمصاريف',
   'reports.export': 'طباعة التقارير وحفظها PDF',
+  'consultations.manage': 'إضافة الاستشارات والاجتماعات وتسجيل أصحابها',
+  'consultations.viewAll': 'الاطلاع على كل الاستشارات والاجتماعات (وليس المسندة إليه فقط)',
+  'reports.office': 'عرض التقرير الشامل للمكتب (ضمن الملفات المتاحة له)',
+  'reports.officeExport': 'طباعة التقرير الشامل وتصديره PDF وExcel',
 } as const;
 export type Permission = keyof typeof PERMISSIONS;
 export const PERMISSION_KEYS = Object.keys(PERMISSIONS) as [Permission, ...Permission[]];
-export const DEFAULT_CONSULTANT_PERMISSIONS: Permission[] = ['reports.export'];
+export const DEFAULT_CONSULTANT_PERMISSIONS: Permission[] = ['reports.export', 'consultations.manage'];
 
 export const CLIENT_KINDS = {
   individual: { label: 'فرد', tone: 'neutral' },
@@ -150,6 +154,10 @@ export const DOC_CATEGORIES = {
   evidence: { label: 'دليل', tone: 'neutral' },
   correspondence: { label: 'مراسلة', tone: 'neutral' },
   receipt: { label: 'سند دفع', tone: 'neutral' },
+  consultation_doc: { label: 'مستند مقدم من طالب الاستشارة', tone: 'neutral' },
+  legal_opinion: { label: 'استشارة قانونية مكتوبة', tone: 'neutral' },
+  delivery_proof: { label: 'إثبات تسليم', tone: 'neutral' },
+  meeting_doc: { label: 'مرفق اجتماع', tone: 'neutral' },
   other: { label: 'أخرى', tone: 'neutral' },
 } as const satisfies LabelMap<string>;
 export type DocCategory = keyof typeof DOC_CATEGORIES;
@@ -246,6 +254,99 @@ export const RELATED_WORK_STATUSES = {
 export type RelatedWorkStatus = keyof typeof RELATED_WORK_STATUSES;
 export const RELATED_WORK_STATUS_KEYS = keys(RELATED_WORK_STATUSES);
 
+// ———— الاستشارات والاجتماعات ————
+export const APPT_METHODS = {
+  phone: { label: 'هاتفية', tone: 'neutral' },
+  in_person: { label: 'حضورية', tone: 'neutral' },
+  video: { label: 'اتصال مرئي', tone: 'neutral' },
+} as const satisfies LabelMap<string>;
+export type ApptMethod = keyof typeof APPT_METHODS;
+export const APPT_METHOD_KEYS = keys(APPT_METHODS);
+
+export const CONSULT_STATUSES = {
+  pending: { label: 'بانتظار التأكيد', tone: 'warning' },
+  confirmed: { label: 'مؤكد', tone: 'info' },
+  done: { label: 'تمت الاستشارة', tone: 'success' },
+  no_show: { label: 'لم يحضر', tone: 'danger' },
+  cancelled: { label: 'ملغى', tone: 'neutral' },
+} as const satisfies LabelMap<string>;
+export type ConsultStatus = keyof typeof CONSULT_STATUSES;
+export const CONSULT_STATUS_KEYS = keys(CONSULT_STATUSES);
+
+export const MEETING_STATUSES = {
+  pending: { label: 'بانتظار التأكيد', tone: 'warning' },
+  confirmed: { label: 'مؤكد', tone: 'info' },
+  held: { label: 'منعقد', tone: 'success' },
+  postponed: { label: 'مؤجل', tone: 'warning' },
+  cancelled: { label: 'ملغى', tone: 'neutral' },
+} as const satisfies LabelMap<string>;
+export type MeetingStatus = keyof typeof MEETING_STATUSES;
+export const MEETING_STATUS_KEYS = keys(MEETING_STATUSES);
+
+export const FEE_MODES = {
+  unset: { label: 'لم يُحدد المبلغ', tone: 'neutral' },
+  paid: { label: 'مدفوعة', tone: 'neutral' },
+  free: { label: 'مجانية', tone: 'neutral' },
+} as const satisfies LabelMap<string>;
+export type FeeMode = keyof typeof FEE_MODES;
+export const FEE_MODE_KEYS = keys(FEE_MODES);
+
+/** حالة السداد للاستشارة/الاجتماع المدفوع — مستقلة عن حالة الموعد. */
+export const PAY_STATUSES = {
+  not_set: { label: 'المبلغ غير مسجل', tone: 'neutral' },
+  free: { label: 'مجانية', tone: 'neutral' },
+  unpaid: { label: 'غير مسدد', tone: 'danger' },
+  partial: { label: 'مسدد جزئيًا', tone: 'warning' },
+  paid: { label: 'مسدد', tone: 'success' },
+  overpaid: { label: 'مبلغ زائد يحتاج تسوية', tone: 'warning' },
+} as const satisfies LabelMap<string>;
+export type PayStatus = keyof typeof PAY_STATUSES;
+export const PAY_STATUS_KEYS = keys(PAY_STATUSES);
+
+export const SVC_TXN_KINDS = {
+  payment: { label: 'دفعة', tone: 'success' },
+  refund: { label: 'استرداد', tone: 'warning' },
+  discount: { label: 'تسوية / خصم', tone: 'info' },
+} as const satisfies LabelMap<string>;
+export type SvcTxnKind = keyof typeof SVC_TXN_KINDS;
+export const SVC_TXN_KIND_KEYS = keys(SVC_TXN_KINDS);
+
+export const ADJUSTMENT_KINDS = {
+  discount: { label: 'خصم / تسوية', tone: 'info' },
+  refund: { label: 'مبلغ مسترد للعميل', tone: 'warning' },
+  consultation_credit: { label: 'احتساب مبلغ استشارة مسددة', tone: 'info' },
+} as const satisfies LabelMap<string>;
+export type AdjustmentKind = keyof typeof ADJUSTMENT_KINDS;
+export const ADJUSTMENT_KIND_KEYS = keys(ADJUSTMENT_KINDS);
+
+export const OPINION_STATUSES = {
+  draft: { label: 'مسودة', tone: 'neutral' },
+  review: { label: 'قيد المراجعة', tone: 'warning' },
+  approved: { label: 'معتمدة داخليًا', tone: 'info' },
+  delivered: { label: 'سُلّمت للمستفيد', tone: 'success' },
+} as const satisfies LabelMap<string>;
+export type OpinionStatus = keyof typeof OPINION_STATUSES;
+export const OPINION_STATUS_KEYS = keys(OPINION_STATUSES);
+// «سُلّمت» لا تُسجل إلا بتسجيل تسليم مستقل بتاريخ وطريقة
+export const OPINION_MANUAL_STATUSES = ['draft', 'review', 'approved'] as const;
+
+export const MEETING_ITEM_KINDS = {
+  decision: { label: 'قرار', tone: 'info' },
+  recommendation: { label: 'توصية', tone: 'neutral' },
+} as const satisfies LabelMap<string>;
+export type MeetingItemKind = keyof typeof MEETING_ITEM_KINDS;
+export const MEETING_ITEM_KIND_KEYS = keys(MEETING_ITEM_KINDS);
+
+/** طبيعة علاقة جهة الاتصال بالمكتب — تُشتق من السجلات ولا تُخزن حتى لا تتناقض. */
+export const CLIENT_RELATIONS = {
+  consultation_only: { label: 'طالب استشارة فقط', tone: 'neutral' },
+  case_client: { label: 'عميل قضية', tone: 'info' },
+  both: { label: 'عميل قضية وطالب استشارة', tone: 'info' },
+  none: { label: 'لا قضايا ولا استشارات بعد', tone: 'neutral' },
+} as const satisfies LabelMap<string>;
+export type ClientRelation = keyof typeof CLIENT_RELATIONS;
+export const CLIENT_RELATION_KEYS = keys(CLIENT_RELATIONS);
+
 // القوائم القابلة للتعديل من الإعدادات (القيم الأولية فقط؛ يستطيع صاحب المكتب الإضافة والإيقاف).
 export const LOOKUP_LISTS = {
   case_types: {
@@ -280,6 +381,14 @@ export const LOOKUP_LISTS = {
   payment_methods: {
     label: 'طرق الدفع',
     defaults: ['تحويل بنكي', 'نقدًا', 'شيك', 'نقاط بيع', 'أخرى'],
+  },
+  consultation_categories: {
+    label: 'تصنيفات الاستشارات',
+    defaults: ['عمالي', 'تجاري', 'شركات', 'عقود', 'أحوال شخصية', 'عقاري', 'جزائي', 'إداري', 'تنفيذ', 'أخرى'],
+  },
+  delivery_methods: {
+    label: 'طرق تسليم الاستشارة',
+    defaults: ['بريد إلكتروني', 'تسليم ورقي باليد', 'رسالة نصية', 'أخرى'],
   },
 } as const;
 export type LookupListKey = keyof typeof LOOKUP_LISTS;
@@ -325,6 +434,8 @@ export const DEFAULT_SETTINGS = {
   'integration.enabled': false,
   'integration.enabledAt': null as string | null,
   'reports.footer': '',
+  'appointments.defaultConsultMinutes': 60,
+  'appointments.hearingBlockMinutes': 60,
 };
 export type SettingsShape = typeof DEFAULT_SETTINGS;
 export type SettingKey = keyof SettingsShape;

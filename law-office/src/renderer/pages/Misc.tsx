@@ -69,7 +69,13 @@ export function TasksPage() {
             empty="لا توجد مهام"
             columns={[
               { key: 't', header: 'المهمة', sortValue: (r) => r.title, render: (r) => <div><div style={{ fontWeight: 500 }}>{r.title}</div>{r.hearingRequestId && <div className="sub">من طلب ورد في جلسة</div>}</div> },
-              { key: 'c', header: 'الملف', sortValue: (r) => r.caseFileNo ?? r.clientName ?? '', render: (r) => (r.caseId ? <Link to={`/cases/${r.caseId}?tab=tasks`} onClick={(e) => e.stopPropagation()}><Ltr>{r.caseFileNo}</Ltr> — {r.caseTitle}</Link> : r.clientName ?? <span className="muted">عامة</span>) },
+              { key: 'c', header: 'الملف', sortValue: (r) => r.caseFileNo ?? r.clientName ?? '', render: (r) => (
+                  <div>
+                    {r.caseId ? <Link to={`/cases/${r.caseId}?tab=tasks`} onClick={(e) => e.stopPropagation()}><Ltr>{r.caseFileNo}</Ltr> — {r.caseTitle}</Link> : r.clientName ?? (!r.meetingId && !r.consultationId && <span className="muted">عامة</span>)}
+                    {r.meetingId && <div className="sub"><Link to={`/appointments/meetings/${r.meetingId}`} onClick={(e) => e.stopPropagation()}>اجتماع <Ltr>{r.meetingRef}</Ltr></Link></div>}
+                    {r.consultationId && <div className="sub"><Link to={`/appointments/consultations/${r.consultationId}`} onClick={(e) => e.stopPropagation()}>استشارة <Ltr>{r.consultationRef}</Ltr></Link></div>}
+                  </div>
+                ) },
               { key: 'a', header: 'المسؤول', sortValue: (r) => r.assigneeName ?? '', render: (r) => r.assigneeName ?? '—' },
               { key: 'd', header: 'الاستحقاق', sortValue: (r) => r.dueDate ?? 'z', render: (r) => (r.dueDate ? <span><Ltr>{fmtDate(r.dueDate)}</Ltr>{r.dueTime && <> <Ltr>{r.dueTime}</Ltr></>} {r.overdue && <Badge tone="danger">متأخرة</Badge>}</span> : '—') },
               { key: 'p', header: 'الأولوية', sortValue: (r) => ['low', 'normal', 'high', 'urgent'].indexOf(r.priority), render: (r) => <StatusBadge map={PRIORITIES} value={r.priority} /> },
@@ -138,7 +144,7 @@ export function DocumentsPage() {
   );
 }
 
-const TYPE_LABEL: Record<string, string> = { client: 'العملاء', case: 'القضايا', memo: 'المذكرات', note: 'الملاحظات', communication: 'سجل التواصل', document: 'المستندات', hearing: 'ملخصات الجلسات' };
+const TYPE_LABEL: Record<string, string> = { client: 'العملاء', case: 'القضايا', consultation: 'الاستشارات', meeting: 'الاجتماعات', memo: 'المذكرات', note: 'الملاحظات', communication: 'سجل التواصل', document: 'المستندات', hearing: 'ملخصات الجلسات' };
 
 export function SearchPage() {
   const [sp] = useSearchParams();
@@ -150,7 +156,10 @@ export function SearchPage() {
     else if (h.type === 'case') navigate(`/cases/${h.id}`);
     else if (h.type === 'memo') navigate(`/cases/${h.caseId}/memos/${h.id}`);
     else if (h.type === 'hearing') navigate(`/cases/${h.caseId}?tab=stages&hearing=${h.id}`);
-    else if (h.type === 'document') navigate(h.caseId ? `/cases/${h.caseId}?tab=docs` : `/clients/${h.clientId}?tab=docs`);
+    else if (h.type === 'consultation') navigate(`/appointments/consultations/${h.id}`);
+    else if (h.type === 'meeting') navigate(`/appointments/meetings/${h.id}`);
+    else if (h.type === 'document')
+      navigate(h.consultationId ? `/appointments/consultations/${h.consultationId}?tab=docs` : h.meetingId ? `/appointments/meetings/${h.meetingId}?tab=docs` : h.caseId ? `/cases/${h.caseId}?tab=docs` : `/clients/${h.clientId}?tab=docs`);
     else navigate(h.caseId ? `/cases/${h.caseId}` : `/clients/${h.clientId}?tab=notes`);
   };
   const groups = new Map<string, MethodOutput<'search.global'>['hits']>();

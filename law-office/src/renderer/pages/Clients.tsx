@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Paperclip, Archive, ArchiveRestore, Banknote, Briefcase, FilePlus2, FileText, Pencil, Plus, ScrollText, StickyNote, UserPlus, MessageSquare, BarChart3 } from 'lucide-react';
+import { Paperclip, Archive, ArchiveRestore, Banknote, Briefcase, FilePlus2, FileText, Pencil, Plus, ScrollText, StickyNote, UserPlus, MessageSquare, BarChart3, MessagesSquare } from 'lucide-react';
 import { Alert, Badge, Button, Card, DataTable, Empty, ErrorBox, KV, Loading, Select, StatusBadge, Tabs, toast, Ltr } from '../components/ui';
 import { api, invalidate } from '../lib/api';
 import { useApi, useDebounced } from '../lib/hooks';
 import { useSession } from '../lib/session';
 import { EVENT_KIND, LastActionCell, NextEventCell, When } from '../lib/display';
-import { CASE_STATUSES, CLIENT_KINDS, CLIENT_STATUSES, COMM_CHANNELS, CONTRACT_KINDS, CONTRACT_STATUSES, FEE_TYPES, FOLLOW_STATUSES, POA_STATUSES } from '../../shared/constants';
+import { CONSULT_STATUSES, MEETING_STATUSES, PAY_STATUSES, CLIENT_RELATIONS, CASE_STATUSES, CLIENT_KINDS, CLIENT_STATUSES, COMM_CHANNELS, CONTRACT_KINDS, CONTRACT_STATUSES, FEE_TYPES, FOLLOW_STATUSES, POA_STATUSES } from '../../shared/constants';
 import { fmtAmount } from '../../shared/money';
 import { fmtDate } from '../../shared/dates';
 import { ClientForm, CaseForm } from '../forms/clientCase';
@@ -15,6 +15,7 @@ import { ContractForm, ExpenseForm, FeeItemForm, NoteForm, CommForm, PaymentForm
 import { DocumentAttachForm, type DocDefaults } from '../forms/docs';
 import { DocumentBrowser } from '../components/viewer';
 import { optsFrom } from '../forms/common';
+import { AdjustmentForm, ConsultationForm } from '../forms/appointments';
 import { ReasonForm } from '../forms/litigation';
 import type { MethodOutput } from '../../main/ipc/registry';
 
@@ -82,7 +83,7 @@ export function ClientsPage() {
 }
 
 type Profile = MethodOutput<'clients.get'>;
-type Tab = 'summary' | 'cases' | 'contracts' | 'poas' | 'fees' | 'docs' | 'notes';
+type Tab = 'summary' | 'cases' | 'consultations' | 'contracts' | 'poas' | 'fees' | 'docs' | 'notes';
 
 export function ClientProfilePage() {
   const { id } = useParams<{ id: string }>();
@@ -91,10 +92,11 @@ export function ClientProfilePage() {
   const q = useApi(() => api('clients.get', { id: id! }), [id]);
   const { can } = useSession();
   const navigate = useNavigate();
-  const [modal, setModal] = useState<null | 'edit' | 'case' | 'contract' | 'poa' | 'payment' | 'doc' | 'note' | 'comm' | 'expense' | 'archive'>(null);
+  const [modal, setModal] = useState<null | 'consultation' | 'edit' | 'case' | 'contract' | 'poa' | 'payment' | 'doc' | 'note' | 'comm' | 'expense' | 'archive'>(null);
   const [editContract, setEditContract] = useState<Profile['contracts'][number] | null>(null);
   const [editPoa, setEditPoa] = useState<Profile['poas'][number] | null>(null);
   const [feeItemFor, setFeeItemFor] = useState<string | null>(null);
+  const [adjustFor, setAdjustFor] = useState<{ id: string; title: string } | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
   const [attach, setAttach] = useState<DocDefaults | null>(null);
   const openDoc = (id: string) => {
@@ -133,6 +135,8 @@ export function ClientProfilePage() {
               <h1>{c.name}</h1>
               <Badge tone="outline">{CLIENT_KINDS[c.kind].label}</Badge>
               <StatusBadge map={CLIENT_STATUSES} value={c.status} />
+              <Badge tone="info">{CLIENT_RELATIONS[p.relation].label}</Badge>
+              {c.clientNo && <Badge tone="outline">رقم العميل <Ltr>{c.clientNo}</Ltr></Badge>}
               {!full && <Badge tone="neutral">اطلاع محدود على ملفاتك المسندة</Badge>}
             </div>
             <div className="row wrap help" style={{ gap: 16 }}>
@@ -144,6 +148,7 @@ export function ClientProfilePage() {
           </div>
           <div className="btn-group">
             {can('cases.create') && <Button variant="primary" icon={<Plus />} onClick={() => setModal('case')}>إضافة قضية</Button>}
+            {can('consultations.manage') && <Button icon={<MessagesSquare />} onClick={() => setModal('consultation')}>إضافة استشارة</Button>}
             {full && <Button icon={<Pencil />} onClick={() => setModal('edit')}>تعديل</Button>}
             {can('reports.export') && <Button icon={<BarChart3 />} onClick={() => navigate(`/reports?type=client&clientId=${c.id}`)}>ملخص شامل</Button>}
           </div>
@@ -162,6 +167,7 @@ export function ClientProfilePage() {
         tabs={[
           { key: 'summary', label: 'الملخص' },
           { key: 'cases', label: 'القضايا', count: p.cases.length },
+          { key: 'consultations', label: 'الاستشارات والاجتماعات', count: p.consultations.length + p.meetings.length },
           { key: 'contracts', label: 'العقود', count: p.contracts.length },
           { key: 'poas', label: 'الوكالات', count: p.poas.length },
           { key: 'fees', label: 'الأتعاب', hidden: !p.canFees },
@@ -271,6 +277,44 @@ export function ClientProfilePage() {
           />
         </section>
       )}
+      {tab === 'consultations' && (
+        <div className="stack g2">
+          <Card
+            title="الاستشارات"
+            flush
+            actions={can('consultations.manage') && <Button size="sm" icon={<MessagesSquare />} onClick={() => setModal('consultation')}>إضافة استشارة</Button>}
+          >
+            <DataTable
+              rows={p.consultations}
+              rowKey={(r) => r.id}
+              onRowClick={(r) => navigate(`/appointments/consultations/${r.id}`)}
+              empty="لا توجد استشارات لهذا العميل"
+              columns={[
+                { key: 'ref', header: 'المرجع', render: (r) => <Ltr>{r.refNo}</Ltr> },
+                { key: 't', header: 'الموضوع', render: (r) => r.title },
+                { key: 'w', header: 'الموعد', sortValue: (r) => r.startsAt, render: (r) => <When at={r.startsAt} /> },
+                { key: 's', header: 'الحالة', render: (r) => <StatusBadge map={CONSULT_STATUSES} value={r.status} /> },
+                { key: 'c', header: 'القضية', render: (r) => (r.caseFileNo ? <Ltr>{r.caseFileNo}</Ltr> : <span className="muted">—</span>) },
+                ...(p.canFees ? [{ key: 'f', header: 'السداد', render: (r: Profile['consultations'][number]) => (r.finance ? <StatusBadge map={PAY_STATUSES} value={r.finance.status} /> : '—') }] : []),
+              ]}
+            />
+          </Card>
+          <Card title="الاجتماعات" flush>
+            <DataTable
+              rows={p.meetings}
+              rowKey={(r) => r.id}
+              onRowClick={(r) => navigate(`/appointments/meetings/${r.id}`)}
+              empty="لا توجد اجتماعات لهذا العميل"
+              columns={[
+                { key: 'ref', header: 'المرجع', render: (r) => <Ltr>{r.refNo}</Ltr> },
+                { key: 't', header: 'العنوان', render: (r) => r.title },
+                { key: 'w', header: 'الموعد', sortValue: (r) => r.startsAt, render: (r) => <When at={r.startsAt} /> },
+                { key: 's', header: 'الحالة', render: (r) => <StatusBadge map={MEETING_STATUSES} value={r.status} /> },
+              ]}
+            />
+          </Card>
+        </div>
+      )}
       {tab === 'contracts' && (
         <div className="stack g2">
           <div className="row">
@@ -288,6 +332,7 @@ export function ClientProfilePage() {
                     <>
                       <Button size="sm" icon={<Paperclip />} onClick={() => setAttach({ clientId: c.id, contractId: k.id, category: 'fee_contract', title: k.title })}>إرفاق ملف العقد</Button>
                       <Button size="sm" onClick={() => setFeeItemFor(k.id)}>إضافة بند</Button>
+                      <Button size="sm" onClick={() => setAdjustFor({ id: k.id, title: k.title })}>خصم / استرداد</Button>
                       <Button size="sm" icon={<Pencil />} onClick={() => setEditContract(k)}>تعديل</Button>
                     </>
                   ) : full ? (
@@ -308,6 +353,10 @@ export function ClientProfilePage() {
                           ['الأتعاب الثابتة', k.fixedAmount !== null ? <Ltr>{fmtAmount(k.fixedAmount)}</Ltr> : null],
                           ['أتعاب نسبية', k.percentage !== null ? <span><Ltr>{k.percentage}%</Ltr> — {k.percentageBasis} <span className="help">(غير محتسبة كمستحق ثابت)</span></span> : null],
                           ['المدفوع / المتبقي', k.totals && <span><Ltr>{fmtAmount(k.totals.paid)}</Ltr> / <Ltr>{fmtAmount(k.totals.remaining)}</Ltr>{k.sharedAcrossCases && <span className="help"> — يخص العقد كاملًا ولا يُجمع لكل قضية</span>}</span>],
+                          ['أتعاب نسبية متحققة', k.totals && k.totals.realizedPercentage ? <Ltr>{fmtAmount(k.totals.realizedPercentage)}</Ltr> : null],
+                          ['خصومات وتسويات', k.totals && k.totals.adjustments ? <Ltr>{fmtAmount(k.totals.adjustments)}</Ltr> : null],
+                          ['مبالغ مستردة', k.totals && k.totals.refunded ? <Ltr>{fmtAmount(k.totals.refunded)}</Ltr> : null],
+                          ['مبلغ زائد يحتاج تسوية', k.totals && k.totals.overpaid ? <Ltr>{fmtAmount(k.totals.overpaid)}</Ltr> : null],
                         ] as [string, ReactNode | null][])),
                   ]}
                 />
@@ -411,7 +460,9 @@ export function ClientProfilePage() {
       {modal === 'case' && <CaseForm clientId={c.id} onClose={() => setModal(null)} onSaved={(cid) => navigate(`/cases/${cid}`)} />}
       {modal === 'contract' && <ContractForm clientId={c.id} onClose={() => setModal(null)} />}
       {editContract && <ContractForm initial={editContract} clientId={c.id} onClose={() => setEditContract(null)} />}
-      {feeItemFor && <FeeItemForm contractId={feeItemFor} onClose={() => setFeeItemFor(null)} />}
+      {feeItemFor && <FeeItemForm contractId={feeItemFor} percentageAllowed={['percentage', 'mixed'].includes(p.contracts.find((k) => k.id === feeItemFor)?.feeType ?? '')} onClose={() => setFeeItemFor(null)} />}
+      {adjustFor && <AdjustmentForm contractId={adjustFor.id} title={adjustFor.title} onClose={() => setAdjustFor(null)} />}
+      {modal === 'consultation' && <ConsultationForm defaults={{ clientId: c.id }} onClose={() => setModal(null)} onSaved={(cid) => navigate(`/appointments/consultations/${cid}`)} />}
       {modal === 'poa' && <PoaForm clientId={c.id} onClose={() => setModal(null)} />}
       {editPoa && <PoaForm clientId={c.id} initial={editPoa} onClose={() => setEditPoa(null)} />}
       {modal === 'payment' && <PaymentForm clientId={c.id} onClose={() => setModal(null)} />}

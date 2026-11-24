@@ -4,7 +4,7 @@ import type { Db } from './db';
 
 const AUDIT = `created_by TEXT REFERENCES users(id), created_at TEXT NOT NULL, updated_by TEXT REFERENCES users(id), updated_at TEXT NOT NULL`;
 
-export const MIGRATIONS: { version: number; name: string; sql: string }[] = [
+export const MIGRATIONS: { version: number; name: string; sql: string; foreignKeysOff?: boolean }[] = [
   {
     version: 1,
     name: 'initial schema',
@@ -535,6 +535,209 @@ CREATE TABLE integration_tokens (
     name: 'payments: advance flag',
     sql: `ALTER TABLE payments ADD COLUMN is_advance INTEGER NOT NULL DEFAULT 0;`,
   },
+  {
+    version: 3,
+    name: 'consultations, meetings, service finance, contract adjustments',
+    // إعادة بناء جدول المستندات (العميل اختياري لمرفقات الاجتماعات) تتطلب تعطيل فحص المفاتيح أثناء الترحيل ثم فحصها كاملة قبل الاعتماد
+    foreignKeysOff: true,
+    sql: `
+CREATE TABLE consultations (
+  id TEXT PRIMARY KEY,
+  ref_no TEXT NOT NULL UNIQUE,
+  client_id TEXT NOT NULL REFERENCES clients(id),
+  case_id TEXT REFERENCES cases(id),
+  title TEXT NOT NULL,
+  category TEXT,
+  description TEXT,
+  questions TEXT,
+  method TEXT NOT NULL CHECK (method IN ('phone','in_person','video')),
+  starts_at TEXT NOT NULL,
+  duration_min INTEGER NOT NULL CHECK (duration_min > 0),
+  ends_at TEXT NOT NULL,
+  location TEXT,
+  meeting_link TEXT,
+  responsible_user_id TEXT REFERENCES users(id),
+  fee_mode TEXT NOT NULL DEFAULT 'unset' CHECK (fee_mode IN ('unset','paid','free')),
+  fee_amount INTEGER CHECK (fee_amount IS NULL OR fee_amount >= 0),
+  status TEXT NOT NULL DEFAULT 'pending',
+  status_reason TEXT,
+  written_required INTEGER NOT NULL DEFAULT 1,
+  internal_notes TEXT,
+  ${AUDIT}
+);
+CREATE INDEX idx_consult_client ON consultations(client_id);
+CREATE INDEX idx_consult_starts ON consultations(starts_at);
+CREATE INDEX idx_consult_case ON consultations(case_id);
+
+CREATE TABLE meetings (
+  id TEXT PRIMARY KEY,
+  ref_no TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  purpose TEXT,
+  client_id TEXT REFERENCES clients(id),
+  case_id TEXT REFERENCES cases(id),
+  consultation_id TEXT REFERENCES consultations(id),
+  participants TEXT NOT NULL DEFAULT '[]',
+  responsible_user_id TEXT REFERENCES users(id),
+  method TEXT NOT NULL CHECK (method IN ('phone','in_person','video')),
+  starts_at TEXT NOT NULL,
+  ends_at TEXT NOT NULL,
+  location TEXT,
+  meeting_link TEXT,
+  agenda TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  status_reason TEXT,
+  minutes TEXT,
+  fee_amount INTEGER CHECK (fee_amount IS NULL OR fee_amount > 0),
+  ${AUDIT}
+);
+CREATE INDEX idx_meet_starts ON meetings(starts_at);
+CREATE INDEX idx_meet_client ON meetings(client_id);
+
+CREATE TABLE meeting_items (
+  id TEXT PRIMARY KEY,
+  meeting_id TEXT NOT NULL REFERENCES meetings(id),
+  kind TEXT NOT NULL CHECK (kind IN ('decision','recommendation')),
+  text TEXT NOT NULL,
+  task_id TEXT REFERENCES tasks(id),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  ${AUDIT}
+);
+CREATE INDEX idx_meet_items ON meeting_items(meeting_id);
+
+CREATE TABLE appointment_changes (
+  id TEXT PRIMARY KEY,
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('consultation','meeting')),
+  entity_id TEXT NOT NULL,
+  field TEXT NOT NULL,
+  old_value TEXT,
+  new_value TEXT,
+  reason TEXT,
+  changed_by TEXT REFERENCES users(id),
+  changed_at TEXT NOT NULL
+);
+CREATE INDEX idx_appt_changes ON appointment_changes(entity_type, entity_id);
+
+CREATE TABLE service_txns (
+  id TEXT PRIMARY KEY,
+  consultation_id TEXT REFERENCES consultations(id),
+  meeting_id TEXT REFERENCES meetings(id),
+  client_id TEXT REFERENCES clients(id),
+  kind TEXT NOT NULL CHECK (kind IN ('payment','refund','discount')),
+  amount INTEGER NOT NULL CHECK (amount > 0),
+  txn_on TEXT NOT NULL,
+  method TEXT,
+  reference_no TEXT,
+  reason TEXT,
+  notes TEXT,
+  voided INTEGER NOT NULL DEFAULT 0,
+  void_reason TEXT,
+  voided_at TEXT,
+  voided_by TEXT REFERENCES users(id),
+  ${AUDIT},
+  CHECK ((consultation_id IS NULL) <> (meeting_id IS NULL))
+);
+CREATE INDEX idx_svc_consult ON service_txns(consultation_id);
+CREATE INDEX idx_svc_meeting ON service_txns(meeting_id);
+
+CREATE TABLE contract_adjustments (
+  id TEXT PRIMARY KEY,
+  contract_id TEXT NOT NULL REFERENCES contracts(id),
+  client_id TEXT NOT NULL REFERENCES clients(id),
+  kind TEXT NOT NULL CHECK (kind IN ('discount','refund','consultation_credit')),
+  amount INTEGER NOT NULL CHECK (amount > 0),
+  adjusted_on TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  method TEXT,
+  reference_no TEXT,
+  consultation_id TEXT REFERENCES consultations(id),
+  voided INTEGER NOT NULL DEFAULT 0,
+  void_reason TEXT,
+  voided_at TEXT,
+  voided_by TEXT REFERENCES users(id),
+  ${AUDIT}
+);
+CREATE INDEX idx_adj_contract ON contract_adjustments(contract_id);
+
+CREATE TABLE documents_v3 (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  category TEXT NOT NULL,
+  doc_date TEXT,
+  hijri_text TEXT,
+  hijri_source TEXT,
+  client_id TEXT REFERENCES clients(id),
+  case_id TEXT REFERENCES cases(id),
+  stage_id TEXT REFERENCES stages(id),
+  hearing_id TEXT REFERENCES hearings(id),
+  judgment_id TEXT REFERENCES judgments(id),
+  memo_id TEXT REFERENCES memos(id),
+  contract_id TEXT REFERENCES contracts(id),
+  poa_id TEXT REFERENCES poas(id),
+  payment_id TEXT REFERENCES payments(id),
+  status TEXT NOT NULL DEFAULT 'final',
+  is_internal INTEGER NOT NULL DEFAULT 0,
+  current_version INTEGER NOT NULL DEFAULT 1,
+  archived_at TEXT,
+  ${AUDIT},
+  consultation_id TEXT REFERENCES consultations(id),
+  meeting_id TEXT REFERENCES meetings(id),
+  service_txn_id TEXT REFERENCES service_txns(id),
+  CHECK (client_id IS NOT NULL OR meeting_id IS NOT NULL)
+);
+INSERT INTO documents_v3 (id, title, description, category, doc_date, hijri_text, hijri_source, client_id, case_id, stage_id, hearing_id, judgment_id, memo_id,
+  contract_id, poa_id, payment_id, status, is_internal, current_version, archived_at, created_by, created_at, updated_by, updated_at)
+SELECT id, title, description, category, doc_date, hijri_text, hijri_source, client_id, case_id, stage_id, hearing_id, judgment_id, memo_id,
+  contract_id, poa_id, payment_id, status, is_internal, current_version, archived_at, created_by, created_at, updated_by, updated_at FROM documents;
+DROP TABLE documents;
+ALTER TABLE documents_v3 RENAME TO documents;
+CREATE INDEX idx_documents_client ON documents(client_id);
+CREATE INDEX idx_documents_case ON documents(case_id);
+CREATE INDEX idx_documents_consult ON documents(consultation_id);
+CREATE INDEX idx_documents_meeting ON documents(meeting_id);
+
+CREATE TABLE consultation_opinions (
+  id TEXT PRIMARY KEY,
+  consultation_id TEXT NOT NULL REFERENCES consultations(id),
+  title TEXT NOT NULL,
+  opinion_date TEXT,
+  author_name TEXT,
+  status TEXT NOT NULL DEFAULT 'draft',
+  body TEXT,
+  revision INTEGER NOT NULL DEFAULT 1,
+  document_id TEXT REFERENCES documents(id),
+  delivered_on TEXT,
+  delivery_method TEXT,
+  delivery_notes TEXT,
+  delivery_proof_document_id TEXT REFERENCES documents(id),
+  ${AUDIT}
+);
+CREATE INDEX idx_opinions_consult ON consultation_opinions(consultation_id);
+CREATE TABLE opinion_revisions (
+  id TEXT PRIMARY KEY,
+  opinion_id TEXT NOT NULL REFERENCES consultation_opinions(id),
+  revision INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT,
+  note TEXT,
+  saved_by TEXT REFERENCES users(id),
+  saved_at TEXT NOT NULL
+);
+
+ALTER TABLE tasks ADD COLUMN consultation_id TEXT REFERENCES consultations(id);
+ALTER TABLE tasks ADD COLUMN meeting_id TEXT REFERENCES meetings(id);
+ALTER TABLE fee_items ADD COLUMN item_kind TEXT NOT NULL DEFAULT 'installment';
+ALTER TABLE fee_items ADD COLUMN basis TEXT;
+
+-- رقم ثابت لكل عميل/جهة اتصال بترتيب التسجيل
+ALTER TABLE clients ADD COLUMN client_no TEXT;
+UPDATE clients SET client_no = (SELECT printf('%05d', x.rn) FROM (SELECT id, row_number() OVER (ORDER BY created_at, id) AS rn FROM clients) x WHERE x.id = clients.id);
+CREATE UNIQUE INDEX idx_clients_no ON clients(client_no);
+INSERT INTO counters (name, value) SELECT 'client_no', count(*) FROM clients WHERE 1 ON CONFLICT(name) DO UPDATE SET value = excluded.value;
+`,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -558,10 +761,20 @@ export function migrate(db: Db, now: () => string = () => new Date().toISOString
   }
   for (const m of MIGRATIONS) {
     if (m.version <= current) continue;
-    db.tx(() => {
-      db.exec(m.sql);
-      db.run('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)', [m.version, m.name, now()]);
-    });
+    // تعطيل فحص المفاتيح لا يُسمح به داخل معاملة؛ يُعطَّل قبلها ويُفحص الاتساق كاملًا قبل الاعتماد ثم يُعاد تفعيله
+    if (m.foreignKeysOff) db.exec('PRAGMA foreign_keys = OFF');
+    try {
+      db.tx(() => {
+        db.exec(m.sql);
+        if (m.foreignKeysOff) {
+          const bad = db.all('PRAGMA foreign_key_check');
+          if (bad.length) throw new Error(`فشل ترحيل البنية ${m.version}: علاقات غير متسقة (${bad.length})`);
+        }
+        db.run('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)', [m.version, m.name, now()]);
+      });
+    } finally {
+      if (m.foreignKeysOff) db.exec('PRAGMA foreign_keys = ON');
+    }
   }
   return LATEST_SCHEMA_VERSION;
 }

@@ -1,8 +1,9 @@
 // نواة التطبيق المستقلة عن واجهة Electron: قاعدة البيانات، المسارات، الجلسات، ومُرسل الأوامر.
 // تُستخدم من main.ts وفي الاختبارات مباشرة (بما فيها اختبار استدعاء الأوامر دون الواجهة).
 import fs from 'node:fs';
+import path from 'node:path';
 import { Db } from './db/db';
-import { migrate } from './db/migrations';
+import { migrate, currentSchemaVersion, LATEST_SCHEMA_VERSION } from './db/migrations';
 import { buildPaths, ensureDirs, appendLog, type AppPaths } from './paths';
 import { nullPlatform, type Ctx, type Platform } from './context';
 import { AppError } from './errors';
@@ -24,6 +25,25 @@ export interface Session {
 }
 
 export type ApiResult = { ok: true; data: unknown } | { ok: false; error: { code: string; message: string; fields?: Record<string, string>; extra?: Record<string, unknown> } };
+
+/** قبل ترقية بنية قاعدة بيانات قائمة: لقطة متسقة كاملة (VACUUM INTO) تُحفظ مع النسخ التلقائية. فشلها يمنع الترقية. */
+export function preMigrationSnapshot(db: Db, paths: AppPaths, now: Date): string | null {
+  const cur = currentSchemaVersion(db);
+  if (cur === 0 || cur >= LATEST_SCHEMA_VERSION) return null;
+  const stamp = now.toISOString().replace(/[:.]/g, '-');
+  const file = path.join(paths.autoBackupsDir, `قبل-الترقية-بنية${cur}-${stamp}.sqlite`);
+  fs.mkdirSync(paths.autoBackupsDir, { recursive: true });
+  db.raw.prepare('VACUUM INTO ?').run(file);
+  const check = new Db(file, { readOnly: true });
+  try {
+    const ic = check.get<{ integrity_check: string }>('PRAGMA integrity_check');
+    if (ic?.integrity_check !== 'ok') throw new Error('فحص سلامة نسخة ما قبل الترقية فشل؛ لم تُطبق الترقية.');
+  } finally {
+    check.close();
+  }
+  appendLog(paths, `pre-migration snapshot ${cur} -> ${LATEST_SCHEMA_VERSION}: ${file}`);
+  return file;
+}
 
 export class AppCore {
   db!: Db;
@@ -54,6 +74,7 @@ export class AppCore {
 
   openDb(): Db {
     this.db = new Db(this.paths.dbFile);
+    preMigrationSnapshot(this.db, this.paths, this.now());
     migrate(this.db, () => this.now().toISOString());
     seedDefaults(this.db, this.now().toISOString());
     return this.db;

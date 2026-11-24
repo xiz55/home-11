@@ -25,6 +25,14 @@ import {
   STAGE_STATUS_KEYS,
   TASK_STATUS_KEYS,
   CASE_STATUS_KEYS,
+  APPT_METHOD_KEYS,
+  CONSULT_STATUS_KEYS,
+  MEETING_STATUS_KEYS,
+  FEE_MODE_KEYS,
+  PAY_STATUS_KEYS,
+  SVC_TXN_KIND_KEYS,
+  MEETING_ITEM_KIND_KEYS,
+  CLIENT_RELATION_KEYS,
 } from './constants';
 import { isValidDate, TIME_RE } from './dates';
 
@@ -214,6 +222,7 @@ export const clientListInput = z
     q: optText(200),
     kind: z.enum(CLIENT_KIND_KEYS).nullish(),
     status: z.enum(CLIENT_STATUS_KEYS).nullish(),
+    relation: z.enum(CLIENT_RELATION_KEYS).nullish(),
   })
   .default({});
 export const similarClientsInput = z.object({
@@ -389,7 +398,10 @@ export const memoSubmissionInput = z.object({
 
 // ———————— المستندات ————————
 export const documentLinks = z.object({
-  clientId: id,
+  clientId: optId,
+  consultationId: optId,
+  meetingId: optId,
+  serviceTxnId: optId,
   caseId: optId,
   stageId: optId,
   hearingId: optId,
@@ -432,6 +444,8 @@ export const documentListInput = z
     memoId: optId,
     contractId: optId,
     poaId: optId,
+    consultationId: optId,
+    meetingId: optId,
     category: z.enum(DOC_CATEGORY_KEYS).nullish(),
     archived: z.enum(['active', 'archived', 'all']).default('active'),
     clientLevelOnly: z.boolean().default(false),
@@ -486,6 +500,8 @@ export const taskInput = z.object({
   caseId: optId,
   stageId: optId,
   hearingId: optId,
+  consultationId: optId,
+  meetingId: optId,
   assigneeUserId: optId,
   dueDate: optDate,
   dueTime: optTime,
@@ -540,6 +556,17 @@ export const feeItemInput = z.object({
   amount: amount,
   dueDate: optDate,
   notes: optText(2000),
+  itemKind: z.enum(['installment', 'percentage']).default('installment'),
+  basis: optText(2000),
+});
+export const adjustmentInput = z.object({
+  contractId: id,
+  kind: z.enum(['discount', 'refund']),
+  amount: positiveAmount,
+  adjustedOn: reqDate('التاريخ'),
+  reason: reqText('السبب', 1000),
+  method: optText(80),
+  referenceNo: optText(120),
 });
 export const paymentInput = z.object({
   contractId: id,
@@ -579,6 +606,135 @@ export const poaInput = z.object({
 });
 export const poaUpdateInput = poaInput.extend({ id });
 
+// ———————— الاستشارات والاجتماعات ————————
+export const newContactInput = z.object({
+  kind: z.enum(CLIENT_KIND_KEYS).default('individual'),
+  name: reqText('الاسم', 250),
+  phone: z
+    .string({ required_error: 'الجوال مطلوب' })
+    .trim()
+    .min(1, 'الجوال مطلوب')
+    .refine((v) => /^[+\d\s\-()٠-٩]{5,25}$/.test(v), 'رقم غير صالح'),
+  email: optEmail,
+});
+const contactPart = {
+  clientId: optId,
+  newContact: newContactInput.nullish().transform((v) => v ?? null),
+  confirmNewContact: z.boolean().default(false),
+};
+export const consultationInput = z.object({
+  ...contactPart,
+  caseId: optId,
+  title: reqText('عنوان الاستشارة', 250),
+  category: optText(120),
+  description: optText(20000),
+  questions: optText(20000),
+  method: z.enum(APPT_METHOD_KEYS),
+  date: reqDate('تاريخ الاستشارة'),
+  time: reqTime('وقت البداية'),
+  durationMin: z.number({ invalid_type_error: 'أدخل المدة بالدقائق' }).int('المدة بالدقائق').min(5, 'خمس دقائق على الأقل').max(24 * 60, 'المدة طويلة جدًا'),
+  location: optText(300),
+  meetingLink: optText(500),
+  responsibleUserId: optId,
+  feeMode: z.enum(FEE_MODE_KEYS).default('unset'),
+  feeAmount: optAmount,
+  status: z.enum(CONSULT_STATUS_KEYS).default('pending'),
+  statusReason: optText(1000),
+  writtenRequired: z.boolean().default(true),
+  internalNotes: optText(20000),
+  confirmConflicts: z.boolean().default(false),
+});
+export const consultationUpdateInput = consultationInput.extend({ id, changeReason: optText(1000) });
+export const apptListInput = z
+  .object({
+    q: optText(200),
+    from: optDate,
+    to: optDate,
+    responsibleUserId: optId,
+    method: z.enum(APPT_METHOD_KEYS).nullish(),
+    status: optText(40),
+    payStatus: z.enum(PAY_STATUS_KEYS).nullish(),
+    clientId: optId,
+    caseId: optId,
+  })
+  .default({});
+export const participantInput = z.object({ name: reqText('اسم المشارك', 200), role: optText(120) });
+export const meetingInput = z.object({
+  ...contactPart,
+  title: reqText('عنوان الاجتماع', 250),
+  purpose: optText(4000),
+  caseId: optId,
+  consultationId: optId,
+  participants: z.array(participantInput).max(60).default([]),
+  responsibleUserId: optId,
+  method: z.enum(APPT_METHOD_KEYS),
+  date: reqDate('تاريخ الاجتماع'),
+  startTime: reqTime('وقت البداية'),
+  endTime: reqTime('وقت النهاية'),
+  location: optText(300),
+  meetingLink: optText(500),
+  agenda: optText(20000),
+  status: z.enum(MEETING_STATUS_KEYS).default('pending'),
+  statusReason: optText(1000),
+  minutes: optText(100000),
+  feeAmount: optAmount,
+  confirmConflicts: z.boolean().default(false),
+});
+export const meetingUpdateInput = meetingInput.extend({ id, changeReason: optText(1000) });
+export const meetingItemInput = z.object({ id: optId, meetingId: id, kind: z.enum(MEETING_ITEM_KIND_KEYS), text: reqText('نص البند', 4000) });
+export const meetingItemToTaskInput = z.object({
+  itemId: id,
+  title: reqText('عنوان المهمة', 250),
+  assigneeUserId: optId,
+  dueDate: optDate,
+  priority: z.enum(PRIORITY_KEYS).default('normal'),
+});
+export const serviceTxnInput = z.object({
+  consultationId: optId,
+  meetingId: optId,
+  kind: z.enum(SVC_TXN_KIND_KEYS),
+  amount: positiveAmount,
+  txnOn: reqDate('التاريخ'),
+  method: optText(80),
+  referenceNo: optText(120),
+  reason: optText(1000),
+  notes: optText(2000),
+});
+export const opinionInput = z.object({
+  consultationId: id,
+  title: reqText('عنوان الاستشارة المكتوبة', 250),
+  opinionDate: optDate,
+  authorName: optText(200),
+  body: longText(),
+  documentId: optId,
+  status: z.enum(['draft', 'review', 'approved']).default('draft'),
+});
+export const opinionUpdateInput = opinionInput.omit({ consultationId: true }).extend({ id, note: optText(500), baseRevision: z.number().int().min(0) });
+export const opinionDeliveryInput = z.object({
+  id,
+  deliveredOn: reqDate('تاريخ التسليم'),
+  deliveryMethod: reqText('طريقة التسليم', 120),
+  notes: optText(2000),
+  proofDocumentId: optId,
+});
+export const linkConsultationCaseInput = z.object({
+  id,
+  caseId: optId,
+  credit: z
+    .object({ contractId: id, amount: positiveAmount, reason: reqText('سبب التسوية', 1000), adjustedOn: reqDate('تاريخ التسوية') })
+    .nullish()
+    .transform((v) => v ?? null),
+});
+export const conflictCheckInput = z.object({
+  responsibleUserId: optId,
+  date: reqDate('التاريخ'),
+  startTime: reqTime('وقت البداية'),
+  endTime: optTime,
+  durationMin: z.number().int().min(5).max(1440).nullish(),
+  excludeKind: z.enum(['consultation', 'meeting']).nullish(),
+  excludeId: optId,
+});
+
 // ———————— الملاحظات وسجل التواصل ————————
 export const noteInput = z.object({
   id: optId,
@@ -615,6 +771,30 @@ export const reportInput = z.object({
     })
     .default({}),
 });
+
+// ———————— التقرير الشامل للمكتب ————————
+export const OFFICE_REPORT_SECTION_KEYS = ['clients', 'cases', 'consultations', 'meetings', 'finance', 'financeDetails', 'alerts'] as const;
+export const officeReportInput = z
+  .object({
+    mode: z.enum(['asOf', 'period']).default('asOf'),
+    asOf: optDate,
+    from: optDate,
+    to: optDate,
+    clientId: optId,
+    caseType: optText(120),
+    caseStatus: z.enum(['active', 'closed', 'archived']).nullish().transform((v) => v ?? null),
+    responsibleUserId: optId,
+    serviceType: z.enum(['cases', 'consultations', 'meetings']).nullish().transform((v) => v ?? null),
+    payStatus: z.enum(['unpaid', 'partial', 'paid', 'overpaid']).nullish().transform((v) => v ?? null),
+    sections: z.array(z.enum(OFFICE_REPORT_SECTION_KEYS)).max(10).default([]),
+    columns: z.record(z.enum(OFFICE_REPORT_SECTION_KEYS), z.array(z.string().max(40)).max(40)).default({}),
+    includeSensitive: z.boolean().default(false),
+    includeDetails: z.boolean().default(false),
+    staleDays: z.number().int().min(1).max(3650).default(30),
+    expiringDays: z.number().int().min(0).max(3650).default(30),
+  })
+  .default({});
+export const officeReportExportInput = officeReportInput.and(z.object({ format: z.enum(['pdf', 'xlsx', 'print']) }));
 
 // ———————— التكامل ————————
 export const integrationTokenInput = z.object({

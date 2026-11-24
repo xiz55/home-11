@@ -23,8 +23,13 @@ import {
   PRIORITIES,
   STAGE_STATUSES,
   TASK_STATUSES,
+  APPT_METHODS,
+  CONSULT_STATUSES,
+  OPINION_STATUSES,
+  PAY_STATUSES,
   labelOf,
 } from '../../shared/constants';
+import { getConsultation } from './appointments';
 import { ANALYSIS_SECTIONS } from '../../shared/schemas';
 import { hasPerm, requirePerm, requireUser, requireCase, requireClient } from './access';
 import { readSetting } from './settings';
@@ -65,6 +70,10 @@ export function loadReportFonts(fontsDir: string) {
     }
   }
   fontCss = faces.join('\n');
+}
+
+export function reportFontCssText(): string {
+  return fontCss ?? '';
 }
 
 const ltr = (s: string | null | undefined) => (s ? `<bdi dir="ltr" class="ltr">${e(s)}</bdi>` : '—');
@@ -364,6 +373,76 @@ function feesReport(ctx: Ctx, input: ReportInput) {
     title: `كشف أتعاب — ${client.name}`,
     html: shell(ctx, 'كشف أتعاب', e(client.name), maxUpdated(ctx, [], input.clientId), body, ['هذا كشف حساب داخلي لأغراض المتابعة وليس فاتورة ضريبية.']),
   };
+}
+
+/** ملخص استشارة للمستفيد: الملاحظات الداخلية لا تُدرج إلا باختيار صريح. */
+export function consultationSummaryReport(ctx: Ctx, input: { id: string; includeInternalNotes: boolean; includeFees: boolean }): { title: string; html: string } {
+  requirePerm(ctx, 'reports.export', 'لا تملك صلاحية استخراج التقارير');
+  const g = getConsultation(ctx, { id: input.id });
+  const c = g.consultation;
+  const docs = listDocuments(ctx, { consultationId: input.id, archived: 'active', clientLevelOnly: false, q: null, clientId: null, caseId: null, stageId: null, hearingId: null, judgmentId: null, memoId: null, contractId: null, poaId: null, category: null });
+  let body = '<h2>صاحب الاستشارة</h2>' + kv([
+    ['الاسم', e(c.clientName)],
+    ['الجوال', ltr(c.clientPhone)],
+    ['البريد', ltr(c.clientEmail)],
+  ]);
+  body += '<h2>الموعد</h2>' + kv([
+    ['الرقم المرجعي', ltr(c.refNo)],
+    ['العنوان', e(c.title)],
+    ['التصنيف', e(c.category ?? '—')],
+    ['الطريقة', e(labelOf(APPT_METHODS, c.method))],
+    ['التاريخ والوقت', dt(fmtDateTime(c.startsAt))],
+    ['المدة', `${c.durationMin} دقيقة (حتى ${ltr(c.endTime)})`],
+    ['المكان / الرابط', e(c.location ?? c.meetingLink ?? '—')],
+    ['المسؤول', e(c.responsibleName ?? '—')],
+    ['حالة الموعد', badge(labelOf(CONSULT_STATUSES, c.status))],
+  ]);
+  body += '<h2>الموضوع والأسئلة</h2>' + `<div class="text-block">${txt(c.description)}</div>` + (c.questions ? `<div class="text-block">${txt(c.questions)}</div>` : '');
+  body += '<h2>المستندات المقدمة</h2>' + table(['العنوان', 'الملف', 'التاريخ'], docs.filter((d) => d.category !== 'legal_opinion' && d.category !== 'delivery_proof' && !d.isInternal).map((d) => [e(d.title), e(d.current?.originalName ?? '—'), d.docDate ? ltr(fmtDate(d.docDate)) : '—']));
+  body += '<h2>الاستشارة القانونية المكتوبة</h2>';
+  if (!g.opinions.length) body += '<p class="empty">لم تُسجل استشارة مكتوبة.</p>';
+  for (const o of g.opinions) {
+    body += kv([
+      ['العنوان', e(o.title)],
+      ['التاريخ', o.opinionDate ? ltr(fmtDate(o.opinionDate)) : '—'],
+      ['أعدها', e(o.authorName ?? '—')],
+      ['الحالة', badge(labelOf(OPINION_STATUSES, o.status))],
+      ['التسليم', o.deliveredOn ? `${ltr(fmtDate(o.deliveredOn))} — ${e(o.deliveryMethod ?? '')}` : 'لم يُسجل تسليم'],
+    ]);
+    if (o.body) body += `<div class="text-block">${txt(o.body)}</div>`;
+    else if (o.documentId) body += '<p class="src">نص الاستشارة في الملف المرفق.</p>';
+  }
+  if (input.includeFees && c.finance) {
+    const f = c.finance;
+    body += '<h2>الأتعاب</h2>' + kv([
+      ['المبلغ', f.mode === 'free' ? 'مجانية' : f.due === null ? 'غير مسجل' : ltr(fmtAmount(f.due))],
+      ['المدفوع (صافي)', ltr(fmtAmount(f.netPaid))],
+      ['المتبقي', f.remaining === null ? 'غير مسجل' : ltr(fmtAmount(Math.max(f.remaining, 0)))],
+      ['حالة السداد', badge(labelOf(PAY_STATUSES, f.status))],
+    ]);
+  }
+  if (input.includeInternalNotes) body += '<h2>ملاحظات داخلية</h2>' + `<div class="text-block">${txt(c.internalNotes)}</div>`;
+  logActivity(ctx, { action: 'export', entityType: 'consultation', entityId: c.id, clientId: c.clientId, summary: `استخراج ملخص الاستشارة ${c.refNo}${input.includeInternalNotes ? ' (مع الملاحظات الداخلية)' : ''}` });
+  return {
+    title: `ملخص استشارة ${c.refNo}`,
+    html: shell(ctx, 'ملخص استشارة قانونية', `${e(c.refNo)} — ${e(c.clientName)}`, c.updatedAt, body, input.includeInternalNotes ? ['يتضمن ملاحظات داخلية — راجع قبل التسليم.'] : []),
+  };
+}
+
+export async function consultationSummaryOutput(ctx: Ctx, input: { id: string; includeInternalNotes: boolean; includeFees: boolean; action: 'preview' | 'print' | 'pdf' }) {
+  const r = consultationSummaryReport(ctx, input);
+  if (input.action === 'preview') return { html: r.html, saved: false, path: null as string | null };
+  if (input.action === 'print') {
+    if (!ctx.platform.printHtml) throw new AppError('INTERNAL', 'الطباعة غير متاحة');
+    await ctx.platform.printHtml(r.html);
+    return { html: null, saved: true, path: null };
+  }
+  if (!ctx.platform.htmlToPdf) throw new AppError('INTERNAL', 'الحفظ PDF غير متاح');
+  const dest = await ctx.platform.showSaveFile({ title: 'حفظ الملخص PDF', defaultName: `${r.title.replace(/[\\/:*?"<>|]/g, ' ')}.pdf`, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+  if (!dest) return { html: null, saved: false, path: null };
+  const final = dest.toLowerCase().endsWith('.pdf') ? dest : dest + '.pdf';
+  fs.writeFileSync(final, await ctx.platform.htmlToPdf(r.html));
+  return { html: null, saved: true, path: final };
 }
 
 export function renderReport(ctx: Ctx, input: ReportInput): { title: string; html: string } {

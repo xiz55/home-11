@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, CalendarCheck } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarCheck, MessagesSquare, Users, Gavel } from 'lucide-react';
 import { Alert, Badge, Button, Card, DataTable, Empty, ErrorBox, Loading, StatusBadge, Ltr } from '../components/ui';
 import { api } from '../lib/api';
 import { useApi } from '../lib/hooks';
 import { useSession } from '../lib/session';
-import { EVENT_KIND, TimeOf, When } from '../lib/display';
+import { EVENT_KIND, TimeOf, When, eventPath } from '../lib/display';
 import { addDays, fmtDateLong, monthName, todayRiyadh, weekdayOf, pad } from '../../shared/dates';
-import { HEARING_STATUSES, TASK_STATUSES, DEADLINE_STATUSES } from '../../shared/constants';
+import { HEARING_STATUSES, TASK_STATUSES, DEADLINE_STATUSES, CONSULT_STATUSES, MEETING_STATUSES } from '../../shared/constants';
 import type { MethodOutput } from '../../main/ipc/registry';
 
 type Ev = MethodOutput<'calendar.events'>[number];
@@ -21,10 +21,24 @@ function startOfWeek(d: string) {
 function statusOf(e: Ev) {
   if (e.kind === 'hearing') return <StatusBadge map={HEARING_STATUSES} value={e.status} />;
   if (e.kind === 'task') return <StatusBadge map={TASK_STATUSES} value={e.status} />;
+  if (e.kind === 'consultation') return <StatusBadge map={CONSULT_STATUSES} value={e.status} />;
+  if (e.kind === 'meeting') return <StatusBadge map={MEETING_STATUSES} value={e.status} />;
   return <StatusBadge map={DEADLINE_STATUSES} value={e.status} />;
 }
 
+/** أيقونة تميّز نوع الموعد بالإضافة إلى اسمه (لا يُعتمد على اللون وحده). */
+export function KindIcon({ kind }: { kind: string }) {
+  if (kind === 'consultation') return <MessagesSquare size={13} aria-hidden />;
+  if (kind === 'meeting') return <Users size={13} aria-hidden />;
+  if (kind === 'hearing') return <Gavel size={13} aria-hidden />;
+  return null;
+}
+
 export function CalendarPage() {
+  return <CalendarView />;
+}
+
+export function CalendarView({ only, embedded }: { only?: ('consultation' | 'meeting')[]; embedded?: boolean }) {
   const today = todayRiyadh();
   const [view, setView] = useState<View>('month');
   const [anchor, setAnchor] = useState(today);
@@ -49,11 +63,12 @@ export function CalendarPage() {
     return { from: anchor, to: addDays(anchor, 60) };
   }, [view, anchor]);
   const q = useApi(() => api('calendar.events', { from: range.from, to: range.to, clientId: clientId || null, caseId: caseId || null, responsibleUserId: resp || null }), [range.from, range.to, clientId, caseId, resp]);
+  const events = useMemo(() => (q.data ?? []).filter((e) => !only || (only as string[]).includes(e.kind)), [q.data, only]);
   const byDay = useMemo(() => {
     const m = new Map<string, Ev[]>();
-    for (const e of q.data ?? []) m.set(e.date, [...(m.get(e.date) ?? []), e]);
+    for (const e of events) m.set(e.date, [...(m.get(e.date) ?? []), e]);
     return m;
-  }, [q.data]);
+  }, [events]);
   const move = (dir: 1 | -1) => {
     if (view === 'week') setAnchor(addDays(anchor, 7 * dir));
     else if (view === 'month') {
@@ -71,16 +86,20 @@ export function CalendarPage() {
   const dayEvents = byDay.get(selected) ?? [];
   const evChip = (e: Ev) => (
     <div key={e.kind + e.id} className={`cal-ev ${e.kind} ${e.confirmed ? '' : 'unconfirmed'}`} title={e.title}>
-      {e.time && <Ltr>{e.time}</Ltr>} {e.kind === 'hearing' ? e.caseTitle : e.title}
+      <KindIcon kind={e.kind} /> {e.time && <Ltr>{e.time}</Ltr>} {e.kind === 'hearing' ? e.caseTitle : e.title}
     </div>
   );
   return (
     <div>
       <div className="page-head">
-        <div>
-          <h1>التقويم والجلسات</h1>
-          <div className="sub">تقويم موحد للمكتب بتوقيت الرياض. المواعيد غير المؤكدة تظهر بإطار متقطع ولا تعامل كمعتمدة.</div>
-        </div>
+        {embedded ? (
+          <div className="sub">الاستشارات والاجتماعات فقط. التقويم العام للمكتب يعرضها مع الجلسات والمهام.</div>
+        ) : (
+          <div>
+            <h1>التقويم والجلسات</h1>
+            <div className="sub">تقويم موحد للمكتب بتوقيت الرياض: الجلسات والمهام والمواعيد الإجرائية والاستشارات والاجتماعات. المواعيد غير المؤكدة تظهر بإطار متقطع.</div>
+          </div>
+        )}
         <div className="seg" role="tablist" aria-label="طريقة العرض">
           {(['week', 'month', 'list'] as View[]).map((v) => (
             <button key={v} className={view === v ? 'on' : ''} onClick={() => setView(v)} role="tab" aria-selected={view === v}>
@@ -117,15 +136,18 @@ export function CalendarPage() {
       ) : view === 'list' ? (
         <Card flush>
           <DataTable
-            rows={q.data ?? []}
+            rows={events}
             rowKey={(r) => r.kind + r.id}
-            onRowClick={(r) => r.caseId && navigate(r.kind === 'hearing' ? `/cases/${r.caseId}?tab=stages&hearing=${r.id}` : `/cases/${r.caseId}`)}
+            onRowClick={(r) => {
+              const p = eventPath(r);
+              if (p) navigate(p);
+            }}
             empty="لا توجد مواعيد في هذه الفترة"
             columns={[
               { key: 'w', header: 'الموعد', sortValue: (r) => r.date + (r.time ?? ''), render: (r) => (r.startsAt ? <When at={r.startsAt} /> : <When at={r.date} dateOnly />) },
-              { key: 'k', header: 'النوع', render: (r) => <div className="row" style={{ gap: 4 }}><Badge tone={EVENT_KIND[r.kind].tone}>{EVENT_KIND[r.kind].label}</Badge>{!r.confirmed && <Badge tone="warning">غير مؤكد</Badge>}</div> },
+              { key: 'k', header: 'النوع', render: (r) => <div className="row" style={{ gap: 4 }}><Badge tone={EVENT_KIND[r.kind].tone}><KindIcon kind={r.kind} /> {EVENT_KIND[r.kind].label}</Badge>{!r.confirmed && <Badge tone="warning">غير مؤكد</Badge>}</div> },
               { key: 't', header: 'البيان', sortValue: (r) => r.title, render: (r) => <div>{r.kind === 'hearing' ? r.caseTitle : r.title}{r.stageType && <div className="sub">{r.stageType}{r.location ? ` — ${r.location}` : ''}</div>}</div> },
-              { key: 'c', header: 'العميل / الملف', render: (r) => <div>{r.clientName ?? '—'}{r.fileNo && <div className="sub"><Ltr>{r.fileNo}</Ltr></div>}</div> },
+              { key: 'c', header: 'العميل / الملف', render: (r) => <div>{r.clientName ?? '—'}{(r.fileNo ?? r.refNo) && <div className="sub"><Ltr>{r.fileNo ?? r.refNo}</Ltr></div>}</div> },
               { key: 'r', header: 'المسؤول', render: (r) => r.responsible ?? '—' },
               { key: 's', header: 'الحالة', render: (r) => statusOf(r) },
             ]}
@@ -160,7 +182,7 @@ export function CalendarPage() {
                   <div className="wd-body">
                     {(byDay.get(d) ?? []).map((e) => (
                       <button key={e.kind + e.id} className="ev-card" onClick={() => setSelected(d)} style={{ borderStyle: e.confirmed ? 'solid' : 'dashed' }}>
-                        <div className="row" style={{ gap: 4 }}><Badge tone={EVENT_KIND[e.kind].tone}>{EVENT_KIND[e.kind].label}</Badge>{e.time && <Ltr>{e.time}</Ltr>}</div>
+                        <div className="row" style={{ gap: 4 }}><Badge tone={EVENT_KIND[e.kind].tone}><KindIcon kind={e.kind} /> {EVENT_KIND[e.kind].label}</Badge>{e.time && <Ltr>{e.time}</Ltr>}</div>
                         <div>{e.kind === 'hearing' ? e.caseTitle : e.title}</div>
                       </button>
                     ))}
@@ -177,16 +199,21 @@ export function CalendarPage() {
                 {dayEvents.map((e) => (
                   <li key={e.kind + e.id}>
                     <div className="row wrap" style={{ gap: 6 }}>
-                      <Badge tone={EVENT_KIND[e.kind].tone}>{EVENT_KIND[e.kind].label}</Badge>
+                      <Badge tone={EVENT_KIND[e.kind].tone}><KindIcon kind={e.kind} /> {EVENT_KIND[e.kind].label}</Badge>
                       {e.startsAt && <TimeOf iso={e.startsAt} />}
                       {statusOf(e)}
                       {!e.confirmed && <Badge tone="warning">غير مؤكد</Badge>}
                     </div>
                     <div style={{ fontWeight: 500, marginTop: 4 }}>{e.kind === 'hearing' ? e.caseTitle : e.title}</div>
                     <div className="help">
-                      {e.clientName} {e.fileNo && <>— <Ltr>{e.fileNo}</Ltr></>} {e.stageType && `— ${e.stageType}`} {e.location && `— ${e.location}`} {e.responsible && `— ${e.responsible}`}
+                      {e.clientName} {(e.fileNo ?? e.refNo) && <>— <Ltr>{e.fileNo ?? e.refNo}</Ltr></>} {e.stageType && `— ${e.stageType}`} {e.location && `— ${e.location}`} {e.responsible && `— ${e.responsible}`}
                     </div>
-                    {e.caseId && (
+                    {(e.kind === 'consultation' || e.kind === 'meeting') && (
+                      <div className="btn-group" style={{ marginTop: 6 }}>
+                        <Button size="sm" onClick={() => navigate(eventPath(e)!)}>{e.kind === 'consultation' ? 'فتح الاستشارة' : 'فتح الاجتماع'}</Button>
+                      </div>
+                    )}
+                    {e.caseId && e.kind !== 'consultation' && e.kind !== 'meeting' && (
                       <div className="btn-group" style={{ marginTop: 6 }}>
                         <Button size="sm" onClick={() => navigate(`/cases/${e.caseId}`)}>فتح القضية</Button>
                         {e.kind === 'hearing' && <Button size="sm" onClick={() => navigate(`/cases/${e.caseId}?tab=stages&hearing=${e.id}`)}>فتح الجلسة</Button>}

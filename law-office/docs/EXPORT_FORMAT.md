@@ -19,6 +19,10 @@
 - المبالغ أعداد صحيحة بالهللة (`100000.00 ر.س` = `10000000`).
 - علاقات «عدة إلى عدة»: `contract_cases` (العقود ↔ القضايا)، `poa_cases` (الوكالات ↔ القضايا)، `user_case_access` و`user_client_access` (صلاحيات المستشارين).
 - مسار المرفق: `documents` ← `document_versions.document_id` ← `stored_name` ← `attachments/<أول حرفين>/<stored_name>`.
+- الاستشارات والاجتماعات (بنية 3): `consultations` (صاحب الاستشارة `client_id` في سجل جهات الاتصال الموحد `clients`، والقضية `case_id` اختيارية)، `consultation_opinions` و`opinion_revisions` (الاستشارة المكتوبة ونسخها)، `meetings` و`meeting_items` (القرارات والتوصيات، و`task_id` للمهمة الناتجة)، `appointment_changes` (سجل تغيير المواعيد).
+- مالية الاستشارات والاجتماعات: `service_txns` (`kind` = دفعة/استرداد/تسوية، لكل حركة `consultation_id` أو `meeting_id`). خصومات العقود واستردادها والتسويات المرتبطة باستشارة: `contract_adjustments` (`kind` = discount/refund/consultation_credit).
+- مستندات الاستشارة والاجتماع في `documents` نفسها عبر `consultation_id` أو `meeting_id` (و`client_id` قد يكون فارغًا لمرفق اجتماع بلا طرف)، وسند الحركة عبر `service_txn_id`.
+- `clients.client_no` رقم ثابت متسلسل لكل عميل/جهة اتصال. `fee_items.item_kind` = `installment` (قسط) أو `percentage` (أتعاب نسبية سُجل تحققها مع `basis`).
 
 ## ما لا يُكتب في JSON
 

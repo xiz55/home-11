@@ -179,9 +179,22 @@ function platformFor(getWin: () => BrowserWindow | null): Platform {
       w.destroy();
       fs.rmSync(file, { force: true });
     },
-    async htmlToPdf(html) {
+    async htmlToPdf(html, opts) {
       const { w, file } = await renderHidden(html);
       try {
+        if (opts?.footer) {
+          // ترقيم الصفحات وتاريخ الاستخراج في تذييل كل صفحة
+          const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          return await w.webContents.printToPDF({
+            printBackground: true,
+            preferCSSPageSize: true,
+            landscape: !!opts.landscape,
+            pageSize: 'A4',
+            displayHeaderFooter: true,
+            headerTemplate: '<div></div>',
+            footerTemplate: `<div dir="rtl" style="width:100%;font-family:Tahoma,'Segoe UI',sans-serif;font-size:7.5px;color:#555;padding:0 10mm;display:flex;justify-content:space-between;"><span>${esc(opts.footer)}</span><span>صفحة <span class="pageNumber"></span> من <span class="totalPages"></span></span></div>`,
+          });
+        }
         return await w.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true, pageSize: 'A4' });
       } finally {
         w.destroy();
@@ -297,7 +310,9 @@ function startScheduler() {
             if (mainWindow) {
               if (mainWindow.isMinimized()) mainWindow.restore();
               mainWindow.focus();
-              if (r.caseId) mainWindow.webContents.send('app:navigate', `/cases/${r.caseId}`);
+              if (r.entityType === 'consultation') mainWindow.webContents.send('app:navigate', `/appointments/consultations/${r.entityId}`);
+              else if (r.entityType === 'meeting') mainWindow.webContents.send('app:navigate', `/appointments/meetings/${r.entityId}`);
+              else if (r.caseId) mainWindow.webContents.send('app:navigate', `/cases/${r.caseId}`);
             }
           });
           n.show();

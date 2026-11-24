@@ -2,7 +2,8 @@ import type { Ctx } from '../context';
 import { uuid } from '../context';
 import { AppError, notFound } from '../errors';
 import { normalizeArabic, searchTokens, likeEscape } from '../../shared/text';
-import { CLIENT_STATUSES, type ClientKind, type ClientStatus } from '../../shared/constants';
+import { CLIENT_STATUSES, type ClientKind, type ClientRelation, type ClientStatus } from '../../shared/constants';
+import { listConsultations, listMeetings } from './appointments';
 import {
   caseScope,
   clientAccess,
@@ -23,6 +24,7 @@ import { upcomingForCases } from './calendar';
 
 export interface ClientRow {
   id: string;
+  client_no: string | null;
   kind: ClientKind;
   name: string;
   short_name: string | null;
@@ -46,6 +48,7 @@ export interface ClientRow {
 export function mapClient(r: ClientRow, full: boolean) {
   return {
     id: r.id,
+    clientNo: r.client_no,
     kind: r.kind,
     name: r.name,
     shortName: r.short_name,
@@ -103,7 +106,28 @@ function params(input: ClientInput) {
   };
 }
 
-export function listClients(ctx: Ctx, input: { q?: string | null; kind?: ClientKind | null; status?: ClientStatus | null }) {
+/** يعطي جهة الاتصال الجديدة رقمًا ثابتًا متسلسلًا. */
+export function nextClientNo(ctx: Ctx): string {
+  ctx.db.run("INSERT INTO counters (name, value) VALUES ('client_no', 0) ON CONFLICT(name) DO NOTHING");
+  for (;;) {
+    ctx.db.run("UPDATE counters SET value = value + 1 WHERE name = 'client_no'");
+    const n = ctx.db.get<{ value: number }>("SELECT value FROM counters WHERE name = 'client_no'")!.value;
+    const no = String(n).padStart(5, '0');
+    if (!ctx.db.get('SELECT id FROM clients WHERE client_no = ?', [no])) return no;
+  }
+}
+
+/** طبيعة العلاقة بالمكتب مشتقة من السجلات الفعلية (قضايا/استشارات) — لا تُخزن حتى لا تتناقض. */
+export function relationOf(caseCount: number, consultCount: number): ClientRelation {
+  if (caseCount && consultCount) return 'both';
+  if (caseCount) return 'case_client';
+  if (consultCount) return 'consultation_only';
+  return 'none';
+}
+
+const RELATION_COUNTS = `(SELECT count(*) FROM cases rc WHERE rc.client_id = cl.id) AS rel_cases, (SELECT count(*) FROM consultations rk WHERE rk.client_id = cl.id) AS rel_consults`;
+
+export function listClients(ctx: Ctx, input: { q?: string | null; kind?: ClientKind | null; status?: ClientStatus | null; relation?: ClientRelation | null }) {
   requireUser(ctx);
   const scope = clientScope(ctx, 'cl.id');
   const cscope = caseScope(ctx, 'ca.id');
@@ -125,20 +149,24 @@ export function listClients(ctx: Ctx, input: { q?: string | null; kind?: ClientK
     );
     p[`t${i}`] = `%${likeEscape(t)}%`;
   });
-  const rows = ctx.db.all<ClientRow & { case_count: number; open_count: number; next_hearing: string | null }>(
-    `SELECT cl.*,
+  const rows = ctx.db.all<ClientRow & { case_count: number; open_count: number; next_hearing: string | null; rel_cases: number; rel_consults: number }>(
+    `SELECT cl.*, ${RELATION_COUNTS},
        (SELECT count(*) FROM cases ca WHERE ca.client_id = cl.id AND ${cscope.sql}) AS case_count,
        (SELECT count(*) FROM cases ca WHERE ca.client_id = cl.id AND ca.status = 'open' AND ca.archived = 0 AND ${cscope.sql}) AS open_count,
        (SELECT min(h.starts_at) FROM hearings h JOIN cases ca ON ca.id = h.case_id WHERE ca.client_id = cl.id AND h.status = 'scheduled' AND h.starts_at >= :now AND ${cscope.sql}) AS next_hearing
      FROM clients cl WHERE ${where.join(' AND ')} ORDER BY cl.name COLLATE NOCASE LIMIT 2000`,
     p,
   );
-  return rows.map((r) => ({
-    ...mapClient(r, false),
-    caseCount: r.case_count,
-    openCaseCount: r.open_count,
-    nextHearingAt: r.next_hearing,
-  }));
+  return rows
+    .map((r) => ({
+      ...mapClient(r, false),
+      caseCount: r.case_count,
+      openCaseCount: r.open_count,
+      nextHearingAt: r.next_hearing,
+      consultationCount: r.rel_consults,
+      relation: relationOf(r.rel_cases, r.rel_consults),
+    }))
+    .filter((r) => !input.relation || r.relation === input.relation);
 }
 
 /** يبحث عن عملاء متشابهين للتنبيه فقط — لا دمج تلقائي. */
@@ -176,11 +204,11 @@ export function createClient(ctx: Ctx, input: ClientInput) {
   const now = ctx.now().toISOString();
   ctx.db.tx(() => {
     ctx.db.run(
-      `INSERT INTO clients (id, kind, name, short_name, phone, email, address, id_type, id_number, rep_name, rep_title, rep_phone, rep_email,
+      `INSERT INTO clients (id, client_no, kind, name, short_name, phone, email, address, id_type, id_number, rep_name, rep_title, rep_phone, rep_email,
          relationship_summary, notes, status, created_by, created_at, updated_by, updated_at)
-       VALUES (:id, :kind, :name, :short_name, :phone, :email, :address, :id_type, :id_number, :rep_name, :rep_title, :rep_phone, :rep_email,
+       VALUES (:id, :client_no, :kind, :name, :short_name, :phone, :email, :address, :id_type, :id_number, :rep_name, :rep_title, :rep_phone, :rep_email,
          :relationship_summary, :notes, 'active', :uid, :now, :uid, :now)`,
-      { id, ...params(input), uid: u.id, now },
+      { id, client_no: nextClientNo(ctx), ...params(input), uid: u.id, now },
     );
     if (u.role !== 'owner') grantClient(ctx, u.id, id);
     logActivity(ctx, { action: 'create', entityType: 'client', entityId: id, clientId: id, summary: `إضافة عميل: ${input.name}` });
@@ -282,8 +310,12 @@ export function getClient(ctx: Ctx, input: { id: string }) {
   const cases = caseRowsForClient(ctx, input.id);
   const caseIds = cases.map((c) => c.id);
   const canFees = hasPerm(ctx, 'fees.view');
+  const rel = ctx.db.get<{ rel_cases: number; rel_consults: number }>(`SELECT ${RELATION_COUNTS} FROM clients cl WHERE cl.id = ?`, [input.id])!;
   return {
     client: mapClient(row, full),
+    relation: relationOf(rel.rel_cases, rel.rel_consults),
+    consultations: listConsultations(ctx, { clientId: input.id }),
+    meetings: listMeetings(ctx, { clientId: input.id }),
     access,
     canFees,
     canManageFees: hasPerm(ctx, 'fees.manage'),
@@ -302,9 +334,9 @@ export function clientOptions(ctx: Ctx) {
   requireUser(ctx);
   const scope = clientScope(ctx, 'cl.id');
   return ctx.db
-    .all<{ id: string; name: string; kind: ClientKind; status: string; full: number }>(
-      `SELECT cl.id, cl.name, cl.kind, cl.status FROM clients cl WHERE ${scope.sql} AND cl.status != 'archived' ORDER BY cl.name`,
+    .all<{ id: string; name: string; kind: ClientKind; status: string; phone: string | null }>(
+      `SELECT cl.id, cl.name, cl.kind, cl.status, cl.phone FROM clients cl WHERE ${scope.sql} AND cl.status != 'archived' ORDER BY cl.name`,
       scope.params,
     )
-    .map((r) => ({ id: r.id, name: r.name, kind: r.kind, access: clientAccess(ctx, r.id) }));
+    .map((r) => ({ id: r.id, name: r.name, kind: r.kind, phone: r.phone, access: clientAccess(ctx, r.id) }));
 }

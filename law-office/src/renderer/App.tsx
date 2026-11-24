@@ -14,6 +14,7 @@ import { CalendarPage } from './pages/Calendar';
 import { TasksPage, DocumentsPage, SearchPage, FeesPage } from './pages/Misc';
 import { ReportsPage } from './pages/Reports';
 import { SettingsPage } from './pages/Settings';
+import { AppointmentsPage, ConsultationPage, MeetingPage } from './pages/Appointments';
 
 function RouteError() {
   const err = useRouteError() as Error;
@@ -40,6 +41,9 @@ const router = createHashRouter([
       { path: 'cases/:id/analysis', element: <AnalysisPage /> },
       { path: 'cases/:id/memos/:memoId', element: <MemoEditorPage /> },
       { path: 'calendar', element: <CalendarPage /> },
+      { path: 'appointments', element: <AppointmentsPage /> },
+      { path: 'appointments/consultations/:id', element: <ConsultationPage /> },
+      { path: 'appointments/meetings/:id', element: <MeetingPage /> },
       { path: 'tasks', element: <TasksPage /> },
       { path: 'documents', element: <DocumentsPage /> },
       { path: 'fees', element: <FeesPage /> },

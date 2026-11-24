@@ -56,6 +56,14 @@ const TABLES = [
   'reminders',
   'activity_log',
   'integration_tokens',
+  'consultations',
+  'meetings',
+  'meeting_items',
+  'appointment_changes',
+  'service_txns',
+  'contract_adjustments',
+  'consultation_opinions',
+  'opinion_revisions',
 ];
 const SENSITIVE_COLUMNS: Record<string, string[]> = { users: ['password_hash', 'recovery_hash'], integration_tokens: ['token_hash'] };
 

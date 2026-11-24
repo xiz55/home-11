@@ -372,6 +372,9 @@ table.data td.actions { white-space: nowrap; width: 1%; }
 .cal-ev.hearing { background: var(--info-bg); color: var(--info-text); }
 .cal-ev.task { background: var(--neutral-bg); color: var(--neutral-text); }
 .cal-ev.deadline { background: var(--warning-bg); color: var(--warning-text); }
+.cal-ev.consultation { background: var(--selected-bg); color: var(--selected-text); }
+.cal-ev.meeting { background: var(--success-bg); color: var(--success-text); }
+.cal-ev svg { vertical-align: -2px; }
 .cal-ev.unconfirmed { background: transparent; border: 1px dashed currentColor; }
 .week-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
 .week-day { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-control); min-height: 220px; display: flex; flex-direction: column; }
@@ -444,3 +447,30 @@ pre.snippet { direction: ltr; text-align: left; background: #F4F5F6; border: 1px
   .modal .modal-body { padding: 14px 18px; }
 }
 
+
+/* ———— الاستشارات والاجتماعات والتقرير الشامل ———— */
+.stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--gap); margin-bottom: var(--gap); }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 14px 16px; text-align: right; box-shadow: var(--shadow); cursor: pointer; font: inherit; color: inherit; }
+.stat-card:hover { border-color: var(--gold); }
+.stat-card.on { border-color: var(--primary); box-shadow: var(--focus-ring); }
+.stat-card .v { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat-card .l { color: var(--text-2); font-size: var(--fs-help); }
+.nr { color: var(--text-2); font-style: italic; }
+.fin-mini { width: 100%; border-collapse: collapse; }
+.fin-mini th, .fin-mini td { border-bottom: 1px solid var(--border); padding: 6px 8px; text-align: right; }
+.fin-mini td.num { text-align: left; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sum-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.sum-item { border: 1px solid var(--border); border-radius: var(--r-control); padding: 10px 12px; background: var(--surface); }
+.sum-item .v { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sum-item .b { color: var(--text-2); font-size: 12px; line-height: 1.5; margin-top: 4px; }
+.conf-badge { border: 1.5px solid var(--danger-text); color: var(--danger-text); border-radius: 6px; padding: 0 8px; font-weight: 600; font-size: 13px; }
+.report-table { overflow-x: auto; }
+.report-table table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.report-table th, .report-table td { border: 1px solid var(--border); padding: 4px 6px; text-align: right; vertical-align: top; }
+.report-table thead th { background: var(--selected-bg); color: var(--selected-text); position: sticky; top: 0; }
+.report-table td.num { text-align: left; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.report-table tr.clickable { cursor: pointer; }
+.report-table tr.clickable:hover td { background: var(--row-hover); }
+.col-picker { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.text-pre { white-space: pre-wrap; line-height: var(--lh-long); }
+@media (max-width: 900px) { .stat-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

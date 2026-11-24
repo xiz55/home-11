@@ -34,6 +34,7 @@ export const ACTION_LABELS: Record<string, string> = {
   version: 'نسخة جديدة',
   integration: 'التكامل',
   reschedule: 'تعديل موعد',
+  report: 'إنشاء تقرير',
 };
 
 export function logActivity(ctx: Ctx, e: ActivityEntry, userOverride?: { id: string | null; username: string } | null): void {

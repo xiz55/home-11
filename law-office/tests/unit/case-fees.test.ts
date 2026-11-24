@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { Db } from '../../src/main/db/db';
-import { MIGRATIONS, migrate, currentSchemaVersion } from '../../src/main/db/migrations';
+import { MIGRATIONS, migrate, currentSchemaVersion, LATEST_SCHEMA_VERSION } from '../../src/main/db/migrations';
 import { call, makeCore, setupOwner, tmpDir } from './helpers';
 
 describe('أتعاب القضية والدفعة المقدمة', () => {
@@ -38,7 +38,7 @@ describe('أتعاب القضية والدفعة المقدمة', () => {
     db.run("INSERT INTO schema_migrations VALUES (1, 'initial schema', '2026-01-01')");
     expect(currentSchemaVersion(db)).toBe(1);
     migrate(db);
-    expect(currentSchemaVersion(db)).toBe(2);
+    expect(currentSchemaVersion(db)).toBe(LATEST_SCHEMA_VERSION);
     const cols = db.all<{ name: string }>('PRAGMA table_info(payments)').map((x) => x.name);
     expect(cols).toContain('is_advance');
     db.close();

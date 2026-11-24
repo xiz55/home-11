@@ -4,10 +4,11 @@ import { Alert, Badge, Button, Card, Empty, ErrorBox, Loading, StatusBadge, Ltr 
 import { api } from '../lib/api';
 import { useApi } from '../lib/hooks';
 import { useSession } from '../lib/session';
-import { EVENT_KIND, When, TimeOf } from '../lib/display';
+import { EVENT_KIND, When, TimeOf, eventPath } from '../lib/display';
+import { KindIcon } from './Calendar';
 import { fmtAmount } from '../../shared/money';
 import { fmtDateLong, fmtDate } from '../../shared/dates';
-import { PRIORITIES, TASK_STATUSES, HEARING_STATUSES } from '../../shared/constants';
+import { PRIORITIES, TASK_STATUSES, HEARING_STATUSES, CONSULT_STATUSES, MEETING_STATUSES } from '../../shared/constants';
 
 export function DashboardPage() {
   const q = useApi(() => api('dashboard.get', {}), []);
@@ -81,6 +82,35 @@ export function DashboardPage() {
         </Card>
       )}
 
+      <Card
+        title="استشارات واجتماعات اليوم"
+        sub={d.appointments.consultationsUnpaid ? `استشارات غير مسددة: ${d.appointments.consultationsUnpaid}` : undefined}
+        flush
+        actions={<Button size="sm" onClick={() => navigate('/appointments')}>القسم</Button>}
+      >
+        {d.todayAppointments.length === 0 ? (
+          <Empty title="لا توجد استشارات أو اجتماعات مسجلة اليوم" />
+        ) : (
+          <ul className="list-plain" style={{ padding: '0 24px' }}>
+            {d.todayAppointments.map((e) => (
+              <li key={e.kind + e.id} className="row between top">
+                <div>
+                  <div className="row wrap" style={{ gap: 6, fontWeight: 500 }}>
+                    <Badge tone={EVENT_KIND[e.kind].tone}><KindIcon kind={e.kind} /> {EVENT_KIND[e.kind].label}</Badge>
+                    {e.startsAt && <TimeOf iso={e.startsAt} />} — {e.title.replace(/^(استشارة|اجتماع): /, '')}
+                  </div>
+                  <div className="help">{e.clientName ?? 'بدون طرف مرتبط'} {e.refNo && <>— <Ltr>{e.refNo}</Ltr></>} {e.responsible && `— ${e.responsible}`}</div>
+                </div>
+                <div className="row">
+                  {e.kind === 'consultation' ? <StatusBadge map={CONSULT_STATUSES} value={e.status} /> : <StatusBadge map={MEETING_STATUSES} value={e.status} />}
+                  <Button size="sm" onClick={() => navigate(eventPath(e)!)}>فتح</Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
       <div className="grid c2">
         <Card title="جلسات اليوم" flush>
           {d.todayHearings.length === 0 ? (
@@ -141,7 +171,7 @@ export function DashboardPage() {
                 <li key={e.kind + e.id} className="row between top">
                   <div>
                     <div className="row wrap" style={{ gap: 6 }}>
-                      <Badge tone={EVENT_KIND[e.kind].tone}>{EVENT_KIND[e.kind].label}</Badge>
+                      <Badge tone={EVENT_KIND[e.kind].tone}><KindIcon kind={e.kind} /> {EVENT_KIND[e.kind].label}</Badge>
                       {!e.confirmed && <Badge tone="warning">غير مؤكد</Badge>}
                       <span style={{ fontWeight: 500 }}>{e.kind === 'hearing' ? e.caseTitle : e.title}</span>
                     </div>
@@ -149,7 +179,11 @@ export function DashboardPage() {
                       {e.startsAt ? <When at={e.startsAt} /> : <When at={e.date} dateOnly />} {e.clientName && `— ${e.clientName}`} {e.responsible && `— ${e.responsible}`}
                     </div>
                   </div>
-                  {e.caseId && <Button size="sm" variant="ghost" onClick={() => navigate(`/cases/${e.caseId}`)}>الملف</Button>}
+                  {(e.kind === 'consultation' || e.kind === 'meeting') ? (
+                    <Button size="sm" variant="ghost" onClick={() => navigate(eventPath(e)!)}>فتح</Button>
+                  ) : (
+                    e.caseId && <Button size="sm" variant="ghost" onClick={() => navigate(`/cases/${e.caseId}`)}>الملف</Button>
+                  )}
                 </li>
               ))}
             </ul>

@@ -122,24 +122,36 @@ export function ContractForm({ clientId, initial, caseId, forCase, onClose }: { 
   );
 }
 
-export function FeeItemForm({ contractId, initial, onClose }: { contractId: string; initial?: { id: string; title: string; amount: number; dueDate: string | null; notes: string | null }; onClose: () => void }) {
-  const f = useForm({ title: initial?.title ?? '', amount: amountToInput(initial?.amount), dueDate: initial?.dueDate ?? '', notes: initial?.notes ?? '' });
+export function FeeItemForm({ contractId, initial, percentageAllowed, onClose }: { contractId: string; initial?: { id: string; title: string; amount: number; dueDate: string | null; notes: string | null; itemKind?: 'installment' | 'percentage'; basis?: string | null }; percentageAllowed?: boolean; onClose: () => void }) {
+  const f = useForm({ title: initial?.title ?? '', amount: amountToInput(initial?.amount), dueDate: initial?.dueDate ?? '', notes: initial?.notes ?? '', itemKind: initial?.itemKind ?? 'installment', basis: initial?.basis ?? '' });
+  const pct = f.values.itemKind === 'percentage';
   return (
     <FormModal
-      title={initial ? 'تعديل بند مالي' : 'إضافة بند مالي (دفعة مجدولة)'}
+      title={initial ? 'تعديل بند مالي' : pct ? 'تسجيل أتعاب نسبية متحققة' : 'إضافة بند مالي (دفعة مجدولة)'}
       onClose={onClose}
       dirty={f.dirty}
       onSubmit={async () => {
         const amt = amountField(f, 'amount', true);
         if (amt === 'invalid' || amt === null) return;
-        const r = await save(f, () => api('feeItems.save', { id: initial?.id ?? null, contractId, title: f.values.title, amount: amt, dueDate: f.values.dueDate || null, notes: f.values.notes || null }), 'حُفظ البند');
+        const r = await save(f, () => api('feeItems.save', { id: initial?.id ?? null, contractId, title: f.values.title, amount: amt, dueDate: f.values.dueDate || null, notes: f.values.notes || null, itemKind: f.values.itemKind as never, basis: f.values.basis || null }), 'حُفظ البند');
         if (r) onClose();
       }}
     >
       <div className="form-grid">
-        <TextInput label="اسم البند" required {...f.bind('title')} onChange={(x) => f.set('title', x)} placeholder="مثال: الدفعة الأولى عند التوقيع" />
+        {percentageAllowed && (
+          <Select
+            className="full"
+            label="نوع البند"
+            options={[{ value: 'installment', label: 'قسط / دفعة مجدولة من الأتعاب الثابتة' }, { value: 'percentage', label: 'أتعاب نسبية تحقق أساس استحقاقها واعتُمدت' }]}
+            {...f.bind('itemKind')}
+            onChange={(x) => f.set('itemKind', x as never)}
+            placeholder="—"
+          />
+        )}
+        <TextInput label="اسم البند" required {...f.bind('title')} onChange={(x) => f.set('title', x)} placeholder={pct ? 'مثال: نسبة 5% من المحكوم به' : 'مثال: الدفعة الأولى عند التوقيع'} />
         <AmountInput label="المبلغ" required value={f.values.amount} onChange={(x) => f.set('amount', x)} error={f.errors.amount} />
-        <DateInput label="تاريخ الاستحقاق" {...f.bind('dueDate')} onChange={(x) => f.set('dueDate', x)} />
+        <DateInput label={pct ? 'تاريخ تحقق الاستحقاق' : 'تاريخ الاستحقاق'} {...f.bind('dueDate')} onChange={(x) => f.set('dueDate', x)} hint={pct ? undefined : 'القسط الذي لم يحل موعده لا يُعد متأخرات في التقارير'} />
+        {pct && <TextInput className="full" label="أساس الاستحقاق واعتماده" required {...f.bind('basis')} onChange={(x) => f.set('basis', x)} hint="مثل: صدور حكم قطعي وتحصيل مبلغ محدد — لا تُضاف الأتعاب المشروطة قبل تحققها" />}
         <TextArea className="full" label="ملاحظات" {...f.bind('notes')} onChange={(x) => f.set('notes', x)} rows={2} />
       </div>
     </FormModal>

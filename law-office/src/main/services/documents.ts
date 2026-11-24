@@ -11,6 +11,7 @@ import { attachmentPath, resolveInside } from '../paths';
 import { contentMatchesExt, extOf, isAllowedExt } from './filetypes';
 import { canAccessCase, clientAccess, linkedScope, requireCase, requireCaseWritable, requireClient, requireLinked, requireUser } from './access';
 import { logActivity } from './activity';
+import { apptScope, requireConsultation, requireMeeting } from './appointments';
 
 export interface StagedFile {
   token: string;
@@ -164,10 +165,23 @@ function describeStaged(ctx: Ctx, s: StagedFile) {
   return { token: s.token, name: s.originalName, size: s.size, ext: s.ext, typeLabel: ALLOWED_EXTENSIONS[s.ext].label, duplicates: findDuplicates(ctx, s.sha256) };
 }
 
+/** نطاق المستندات المرئية: مستندات العميل/القضية بحسب الصلاحية، ومستندات الاستشارات والاجتماعات بحسب صلاحية الموعد. */
+export function docScope(ctx: Ctx): { sql: string; params: Record<string, unknown> } {
+  const l = linkedScope(ctx, 'd.client_id', 'd.case_id');
+  if (l.sql === '1=1') return l;
+  const k = apptScope(ctx, 'consultations', 'kk');
+  const m = apptScope(ctx, 'meetings', 'mm');
+  return {
+    sql: `(${l.sql} OR (d.consultation_id IS NOT NULL AND d.consultation_id IN (SELECT kk.id FROM consultations kk WHERE ${k.sql}))
+      OR (d.meeting_id IS NOT NULL AND d.meeting_id IN (SELECT mm.id FROM meetings mm WHERE ${m.sql})))`,
+    params: { ...l.params, ...k.params, ...m.params },
+  };
+}
+
 export function findDuplicates(ctx: Ctx, sha256: string) {
-  const scope = linkedScope(ctx, 'd.client_id', 'd.case_id');
+  const scope = docScope(ctx);
   return ctx.db
-    .all<{ document_id: string; title: string; version_no: number; original_name: string; case_id: string | null; client_id: string }>(
+    .all<{ document_id: string; title: string; version_no: number; original_name: string; case_id: string | null; client_id: string | null }>(
       `SELECT v.document_id, d.title, v.version_no, v.original_name, d.case_id, d.client_id FROM document_versions v JOIN documents d ON d.id = v.document_id
        WHERE v.sha256 = :sha AND ${scope.sql} LIMIT 10`,
       { sha: sha256, ...scope.params },
@@ -215,7 +229,10 @@ function commitStaged(ctx: Ctx, s: StagedFile): { storedName: string; finalPath:
 }
 
 interface Links {
-  clientId: string;
+  clientId: string | null;
+  consultationId?: string | null;
+  meetingId?: string | null;
+  serviceTxnId?: string | null;
   caseId: string | null;
   stageId: string | null;
   hearingId: string | null;
@@ -228,9 +245,32 @@ interface Links {
 
 /** يمنع الروابط المتناقضة: كل عنصر مرتبط يجب أن يتبع العميل والقضية نفسيهما. */
 export function normalizeLinks(ctx: Ctx, l: Links): Links {
-  const out = { ...l };
+  const out = { ...l, consultationId: l.consultationId ?? null, meetingId: l.meetingId ?? null, serviceTxnId: l.serviceTxnId ?? null };
   const bad = (field: string, msg: string) => new AppError('VALIDATION', msg, { [field]: msg });
-  const client = ctx.db.get('SELECT id FROM clients WHERE id = ?', [l.clientId]);
+  if (out.consultationId || out.meetingId) {
+    // مستندات الاستشارة والاجتماع منفصلة عن ملفات القضايا: لا تُربط بقضية أو مرحلة أو جلسة
+    if (out.consultationId && out.meetingId) throw bad('meetingId', 'المستند يتبع استشارة أو اجتماعًا وليس كليهما');
+    if (out.caseId || out.stageId || out.hearingId || out.judgmentId || out.memoId || out.contractId || out.poaId || out.paymentId)
+      throw bad('caseId', 'مستندات الاستشارات والاجتماعات لا تُربط بعناصر القضية');
+    if (out.consultationId) {
+      const k = ctx.db.get<{ client_id: string }>('SELECT client_id FROM consultations WHERE id = ?', [out.consultationId]);
+      if (!k) throw bad('consultationId', 'الاستشارة غير موجودة');
+      if (out.clientId && out.clientId !== k.client_id) throw bad('clientId', 'المستند لا يتبع صاحب الاستشارة');
+      out.clientId = k.client_id;
+    } else {
+      const m = ctx.db.get<{ client_id: string | null }>('SELECT client_id FROM meetings WHERE id = ?', [out.meetingId]);
+      if (!m) throw bad('meetingId', 'الاجتماع غير موجود');
+      if (out.clientId && m.client_id && out.clientId !== m.client_id) throw bad('clientId', 'المستند لا يتبع الطرف المرتبط بالاجتماع');
+      out.clientId = m.client_id;
+    }
+    if (out.serviceTxnId) {
+      const t = ctx.db.get<{ consultation_id: string | null; meeting_id: string | null }>('SELECT consultation_id, meeting_id FROM service_txns WHERE id = ?', [out.serviceTxnId]);
+      if (!t || t.consultation_id !== out.consultationId || t.meeting_id !== out.meetingId) throw bad('serviceTxnId', 'الحركة المالية لا تتبع هذا الموعد');
+    }
+    return out;
+  }
+  if (out.serviceTxnId) throw bad('serviceTxnId', 'سند الحركة يُرفق من صفحة الاستشارة أو الاجتماع');
+  const client = l.clientId ? ctx.db.get('SELECT id FROM clients WHERE id = ?', [l.clientId]) : null;
   if (!client) throw bad('clientId', 'العميل غير موجود');
   const needCase = (field: string) => {
     if (!out.caseId) throw bad(field, 'اختر القضية أولًا لربط المستند بهذا العنصر');
@@ -302,10 +342,22 @@ function insertVersion(ctx: Ctx, documentId: string, versionNo: number, s: Stage
   return vid;
 }
 
+/** صلاحية الكتابة/القراءة على مستند بحسب ارتباطه. */
+function checkLinkAccess(ctx: Ctx, d: { client_id?: string | null; case_id?: string | null; consultation_id?: string | null; meeting_id?: string | null }, write: boolean) {
+  if (d.consultation_id) requireConsultation(ctx, d.consultation_id);
+  else if (d.meeting_id) requireMeeting(ctx, d.meeting_id);
+  else if (d.case_id) {
+    if (write) requireCaseWritable(ctx, d.case_id);
+    else if (!canAccessCase(ctx, d.case_id)) throw forbidden('لا تملك صلاحية الوصول إلى هذا المستند');
+  } else if (!d.client_id || clientAccess(ctx, d.client_id) !== 'full') {
+    if (write && d.client_id) requireClient(ctx, d.client_id, 'full');
+    throw forbidden('لا تملك صلاحية الوصول إلى هذا المستند');
+  }
+}
+
 export function createDocument(ctx: Ctx, input: DocMeta & Links & { token: string; allowDuplicate: boolean; versionNote: string | null }) {
   requireUser(ctx);
-  if (input.caseId) requireCaseWritable(ctx, input.caseId);
-  else requireClient(ctx, input.clientId, 'full');
+  checkLinkAccess(ctx, { client_id: input.clientId, case_id: input.caseId, consultation_id: input.consultationId, meeting_id: input.meetingId }, true);
   const links = normalizeLinks(ctx, input);
   const s = takeStaged(ctx, input.token);
   if (!input.allowDuplicate) {
@@ -321,9 +373,9 @@ export function createDocument(ctx: Ctx, input: DocMeta & Links & { token: strin
     ctx.db.tx(() => {
       ctx.db.run(
         `INSERT INTO documents (id, title, description, category, doc_date, hijri_text, hijri_source, client_id, case_id, stage_id, hearing_id, judgment_id, memo_id,
-          contract_id, poa_id, payment_id, status, is_internal, current_version, created_by, created_at, updated_by, updated_at)
+          contract_id, poa_id, payment_id, consultation_id, meeting_id, service_txn_id, status, is_internal, current_version, created_by, created_at, updated_by, updated_at)
          VALUES (:id, :title, :description, :category, :doc_date, :hijri_text, :hijri_source, :client_id, :case_id, :stage_id, :hearing_id, :judgment_id, :memo_id,
-          :contract_id, :poa_id, :payment_id, :status, :is_internal, 1, :uid, :now, :uid, :now)`,
+          :contract_id, :poa_id, :payment_id, :consultation_id, :meeting_id, :service_txn_id, :status, :is_internal, 1, :uid, :now, :uid, :now)`,
         {
           id,
           title: input.title,
@@ -341,6 +393,9 @@ export function createDocument(ctx: Ctx, input: DocMeta & Links & { token: strin
           contract_id: links.contractId,
           poa_id: links.poaId,
           payment_id: links.paymentId,
+          consultation_id: links.consultationId,
+          meeting_id: links.meetingId,
+          service_txn_id: links.serviceTxnId,
           status: input.status,
           is_internal: input.isInternal,
           uid: ctx.user!.id,
@@ -367,10 +422,9 @@ export function createDocument(ctx: Ctx, input: DocMeta & Links & { token: strin
 }
 
 export function addVersion(ctx: Ctx, input: { documentId: string; token: string; note: string | null; allowDuplicate: boolean }) {
-  const d = ctx.db.get<{ id: string; client_id: string; case_id: string | null; title: string; current_version: number; archived_at: string | null }>('SELECT * FROM documents WHERE id = ?', [input.documentId]);
+  const d = ctx.db.get<{ id: string; client_id: string | null; case_id: string | null; consultation_id: string | null; meeting_id: string | null; title: string; current_version: number; archived_at: string | null }>('SELECT * FROM documents WHERE id = ?', [input.documentId]);
   if (!d) throw notFound('المستند');
-  if (d.case_id) requireCaseWritable(ctx, d.case_id);
-  else requireClient(ctx, d.client_id, 'full');
+  checkLinkAccess(ctx, d, true);
   if (d.archived_at) throw new AppError('CONFLICT', 'المستند مؤرشف. ألغِ أرشفته أولًا.');
   const s = takeStaged(ctx, input.token);
   const cur = ctx.db.get<{ sha256: string }>('SELECT sha256 FROM document_versions WHERE document_id = ? AND version_no = ?', [d.id, d.current_version]);
@@ -394,19 +448,23 @@ export function addVersion(ctx: Ctx, input: { documentId: string; token: string;
 }
 
 export function updateDocument(ctx: Ctx, input: DocMeta & Links & { id: string }) {
-  const d = ctx.db.get<{ client_id: string; case_id: string | null; title: string }>('SELECT client_id, case_id, title FROM documents WHERE id = ?', [input.id]);
+  const d = ctx.db.get<{ client_id: string | null; case_id: string | null; consultation_id: string | null; meeting_id: string | null; service_txn_id: string | null; title: string }>('SELECT * FROM documents WHERE id = ?', [input.id]);
   if (!d) throw notFound('المستند');
-  if (d.case_id) requireCaseWritable(ctx, d.case_id);
-  else requireClient(ctx, d.client_id, 'full');
-  if (input.clientId !== d.client_id) throw new AppError('VALIDATION', 'لا يمكن نقل المستند إلى عميل آخر', { clientId: 'العميل ثابت' });
-  if (input.caseId && input.caseId !== d.case_id) requireCaseWritable(ctx, input.caseId);
-  if (!input.caseId && d.case_id) requireClient(ctx, d.client_id, 'full');
+  checkLinkAccess(ctx, d, true);
+  if (d.consultation_id || d.meeting_id) {
+    // مستند الموعد يبقى مرتبطًا بموعده
+    input = { ...input, clientId: d.client_id, caseId: null, consultationId: d.consultation_id, meetingId: d.meeting_id, serviceTxnId: input.serviceTxnId ?? d.service_txn_id };
+  } else {
+    if (input.clientId !== d.client_id) throw new AppError('VALIDATION', 'لا يمكن نقل المستند إلى عميل آخر', { clientId: 'العميل ثابت' });
+    if (input.caseId && input.caseId !== d.case_id) requireCaseWritable(ctx, input.caseId);
+    if (!input.caseId && d.case_id) requireClient(ctx, d.client_id!, 'full');
+  }
   const links = normalizeLinks(ctx, input);
   ctx.db.tx(() => {
     ctx.db.run(
       `UPDATE documents SET title = :title, description = :description, category = :category, doc_date = :doc_date, hijri_text = :hijri_text, hijri_source = :hijri_source,
         case_id = :case_id, stage_id = :stage_id, hearing_id = :hearing_id, judgment_id = :judgment_id, memo_id = :memo_id, contract_id = :contract_id,
-        poa_id = :poa_id, payment_id = :payment_id, status = :status, is_internal = :is_internal, updated_by = :uid, updated_at = :now WHERE id = :id`,
+        poa_id = :poa_id, payment_id = :payment_id, service_txn_id = :service_txn_id, status = :status, is_internal = :is_internal, updated_by = :uid, updated_at = :now WHERE id = :id`,
       {
         id: input.id,
         title: input.title,
@@ -423,6 +481,7 @@ export function updateDocument(ctx: Ctx, input: DocMeta & Links & { id: string }
         contract_id: links.contractId,
         poa_id: links.poaId,
         payment_id: links.paymentId,
+        service_txn_id: links.serviceTxnId,
         status: input.status,
         is_internal: input.isInternal,
         uid: ctx.user!.id,
@@ -435,9 +494,10 @@ export function updateDocument(ctx: Ctx, input: DocMeta & Links & { id: string }
 }
 
 export function setDocumentArchived(ctx: Ctx, input: { id: string; archived: boolean }) {
-  const d = ctx.db.get<{ client_id: string; case_id: string | null; title: string }>('SELECT client_id, case_id, title FROM documents WHERE id = ?', [input.id]);
+  const d = ctx.db.get<{ client_id: string | null; case_id: string | null; consultation_id: string | null; meeting_id: string | null; title: string }>('SELECT * FROM documents WHERE id = ?', [input.id]);
   if (!d) throw notFound('المستند');
-  requireLinked(ctx, d.client_id, d.case_id);
+  if (d.consultation_id || d.meeting_id) checkLinkAccess(ctx, d, true);
+  else requireLinked(ctx, d.client_id!, d.case_id);
   ctx.db.tx(() => {
     ctx.db.run('UPDATE documents SET archived_at = ?, updated_by = ?, updated_at = ? WHERE id = ?', [input.archived ? ctx.now().toISOString() : null, ctx.user!.id, ctx.now().toISOString(), input.id]);
     logActivity(ctx, { action: input.archived ? 'archive' : 'unarchive', entityType: 'document', entityId: input.id, caseId: d.case_id, clientId: d.client_id, summary: `${input.archived ? 'أرشفة' : 'إلغاء أرشفة'} المستند: ${d.title} (الملف محفوظ)` });
@@ -456,7 +516,12 @@ function mapDoc(r: DocRow) {
     docDate: r.doc_date as string | null,
     hijriText: r.hijri_text as string | null,
     hijriSource: r.hijri_source as string | null,
-    clientId: String(r.client_id),
+    clientId: r.client_id as string | null,
+    consultationId: r.consultation_id as string | null,
+    consultationRef: (r.consultation_ref as string) ?? null,
+    meetingId: r.meeting_id as string | null,
+    meetingRef: (r.meeting_ref as string) ?? null,
+    serviceTxnId: r.service_txn_id as string | null,
     clientName: (r.client_name as string) ?? null,
     caseId: r.case_id as string | null,
     caseFileNo: (r.case_file_no as string) ?? null,
@@ -489,8 +554,10 @@ function mapDoc(r: DocRow) {
 }
 
 const DOC_SELECT = `SELECT d.*, cl.name AS client_name, c.file_no AS case_file_no, c.title AS case_title, u.display_name AS created_by_name,
+  kk.ref_no AS consultation_ref, mm.ref_no AS meeting_ref,
   v.id AS v_id, v.original_name AS v_original_name, v.ext AS v_ext, v.size AS v_size, v.added_at AS v_added_at, v.extraction_status AS v_extraction_status
-  FROM documents d JOIN clients cl ON cl.id = d.client_id LEFT JOIN cases c ON c.id = d.case_id LEFT JOIN users u ON u.id = d.created_by
+  FROM documents d LEFT JOIN clients cl ON cl.id = d.client_id LEFT JOIN cases c ON c.id = d.case_id LEFT JOIN users u ON u.id = d.created_by
+  LEFT JOIN consultations kk ON kk.id = d.consultation_id LEFT JOIN meetings mm ON mm.id = d.meeting_id
   LEFT JOIN document_versions v ON v.document_id = d.id AND v.version_no = d.current_version`;
 
 export function listDocuments(
@@ -505,13 +572,15 @@ export function listDocuments(
     memoId: string | null;
     contractId: string | null;
     poaId: string | null;
+    consultationId?: string | null;
+    meetingId?: string | null;
     category?: DocCategory | null;
     archived: 'active' | 'archived' | 'all';
     clientLevelOnly: boolean;
   },
 ) {
   requireUser(ctx);
-  const scope = linkedScope(ctx, 'd.client_id', 'd.case_id');
+  const scope = docScope(ctx);
   const where = [scope.sql];
   const p: Record<string, unknown> = { ...scope.params };
   const eq = (col: string, key: string, v: string | null | undefined) => {
@@ -529,24 +598,24 @@ export function listDocuments(
   eq('d.contract_id', 'contractId', input.contractId);
   eq('d.poa_id', 'poaId', input.poaId);
   eq('d.category', 'category', input.category ?? null);
-  if (input.clientLevelOnly) where.push('d.case_id IS NULL');
+  eq('d.consultation_id', 'consultationId', input.consultationId ?? null);
+  eq('d.meeting_id', 'meetingId', input.meetingId ?? null);
+  if (input.clientLevelOnly) where.push('d.case_id IS NULL AND d.consultation_id IS NULL AND d.meeting_id IS NULL');
   if (input.archived === 'active') where.push('d.archived_at IS NULL');
   else if (input.archived === 'archived') where.push('d.archived_at IS NOT NULL');
   searchTokens(input.q ?? '').forEach((t, i) => {
     const k = `q${i}`;
     where.push(`(arnorm(d.title) LIKE :${k} ESCAPE '\\' OR arnorm(coalesce(d.description,'')) LIKE :${k} ESCAPE '\\' OR arnorm(coalesce(v.original_name,'')) LIKE :${k} ESCAPE '\\'
-      OR coalesce(v.extracted_norm,'') LIKE :${k} ESCAPE '\\' OR arnorm(cl.name) LIKE :${k} ESCAPE '\\' OR coalesce(c.file_no,'') LIKE :${k} ESCAPE '\\')`);
+      OR coalesce(v.extracted_norm,'') LIKE :${k} ESCAPE '\\' OR arnorm(coalesce(cl.name,'')) LIKE :${k} ESCAPE '\\' OR coalesce(c.file_no,'') LIKE :${k} ESCAPE '\\')`);
     p[k] = `%${likeEscape(t)}%`;
   });
   return ctx.db.all<DocRow>(`${DOC_SELECT} WHERE ${where.join(' AND ')} ORDER BY coalesce(d.doc_date, substr(d.created_at,1,10)) DESC, d.created_at DESC LIMIT 3000`, p).map(mapDoc);
 }
 
 function requireDocAccess(ctx: Ctx, documentId: string) {
-  const d = ctx.db.get<{ client_id: string; case_id: string | null }>('SELECT client_id, case_id FROM documents WHERE id = ?', [documentId]);
+  const d = ctx.db.get<{ client_id: string | null; case_id: string | null; consultation_id: string | null; meeting_id: string | null }>('SELECT client_id, case_id, consultation_id, meeting_id FROM documents WHERE id = ?', [documentId]);
   if (!d) throw notFound('المستند');
-  if (d.case_id) {
-    if (!canAccessCase(ctx, d.case_id)) throw forbidden('لا تملك صلاحية الوصول إلى هذا المستند');
-  } else if (clientAccess(ctx, d.client_id) !== 'full') throw forbidden('لا تملك صلاحية الوصول إلى هذا المستند');
+  checkLinkAccess(ctx, d, false);
   return d;
 }
 

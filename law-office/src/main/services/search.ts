@@ -2,15 +2,19 @@
 import type { Ctx } from '../context';
 import { likeEscape, searchTokens } from '../../shared/text';
 import { caseScope, clientScope, linkedScope, requireUser } from './access';
+import { apptScope } from './appointments';
+import { docScope } from './documents';
 
 export interface SearchHit {
-  type: 'client' | 'case' | 'memo' | 'note' | 'communication' | 'document' | 'hearing';
+  type: 'client' | 'case' | 'memo' | 'note' | 'communication' | 'document' | 'hearing' | 'consultation' | 'meeting';
   id: string;
   title: string;
   subtitle: string | null;
   snippet: string | null;
   caseId: string | null;
   clientId: string | null;
+  consultationId?: string | null;
+  meetingId?: string | null;
 }
 
 function cond(cols: string[], tokens: string[], prefix: string, p: Record<string, unknown>): string {
@@ -130,12 +134,46 @@ export function globalSearch(ctx: Ctx, input: { q: string }) {
       hits.push({ type: 'hearing', id: r.id, title: `ملخص جلسة — ملف ${r.file_no}`, subtitle: r.starts_at, snippet: snippetOf(r.summary ?? r.outcome, tokens), caseId: r.case_id, clientId: r.client_id });
   }
   {
-    const s = linkedScope(ctx, 'd.client_id', 'd.case_id');
+    const s = apptScope(ctx, 'consultations', 'k');
+    const p: Record<string, unknown> = { ...s.params };
+    const w = cond(
+      ['arnorm(k.title)', 'arnorm(k.ref_no)', 'arnorm(cl.name)', "arnorm(coalesce(cl.phone,''))", "arnorm(coalesce(k.category,''))", "arnorm(coalesce(k.description,''))", "arnorm(coalesce(k.questions,''))",
+        "arnorm(coalesce((SELECT group_concat(o.title || ' ' || coalesce(o.body,''), ' ') FROM consultation_opinions o WHERE o.consultation_id = k.id),''))"],
+      tokens,
+      'co',
+      p,
+    );
+    for (const r of ctx.db.all<{ id: string; ref_no: string; title: string; client_id: string; client_name: string; case_id: string | null; starts_at: string; description: string | null }>(
+      `SELECT k.id, k.ref_no, k.title, k.client_id, cl.name AS client_name, k.case_id, k.starts_at, k.description FROM consultations k JOIN clients cl ON cl.id = k.client_id
+       WHERE ${s.sql} AND ${w} ORDER BY k.starts_at DESC LIMIT 30`,
+      p,
+    ))
+      hits.push({ type: 'consultation', id: r.id, title: r.title, subtitle: `استشارة ${r.ref_no} — ${r.client_name}`, snippet: snippetOf(r.description, tokens), caseId: r.case_id, clientId: r.client_id });
+  }
+  {
+    const s = apptScope(ctx, 'meetings', 'm');
+    const p: Record<string, unknown> = { ...s.params };
+    const w = cond(
+      ['arnorm(m.title)', 'arnorm(m.ref_no)', "arnorm(coalesce(cl.name,''))", "arnorm(coalesce(m.purpose,''))", 'arnorm(m.participants)', "arnorm(coalesce(m.agenda,''))", "arnorm(coalesce(m.minutes,''))",
+        "arnorm(coalesce((SELECT group_concat(i.text, ' ') FROM meeting_items i WHERE i.meeting_id = m.id),''))"],
+      tokens,
+      'mt',
+      p,
+    );
+    for (const r of ctx.db.all<{ id: string; ref_no: string; title: string; client_id: string | null; client_name: string | null; case_id: string | null; minutes: string | null; purpose: string | null }>(
+      `SELECT m.id, m.ref_no, m.title, m.client_id, cl.name AS client_name, m.case_id, m.minutes, m.purpose FROM meetings m LEFT JOIN clients cl ON cl.id = m.client_id
+       WHERE ${s.sql} AND ${w} ORDER BY m.starts_at DESC LIMIT 30`,
+      p,
+    ))
+      hits.push({ type: 'meeting', id: r.id, title: r.title, subtitle: `اجتماع ${r.ref_no}${r.client_name ? ' — ' + r.client_name : ''}`, snippet: snippetOf(r.minutes ?? r.purpose, tokens), caseId: r.case_id, clientId: r.client_id });
+  }
+  {
+    const s = docScope(ctx);
     const p: Record<string, unknown> = { ...s.params };
     const w = cond(['arnorm(d.title)', "arnorm(coalesce(d.description,''))", "arnorm(coalesce(v.original_name,''))", "coalesce(v.extracted_norm,'')"], tokens, 'd', p);
-    for (const r of ctx.db.all<{ id: string; title: string; description: string | null; case_id: string | null; client_id: string; client_name: string; file_no: string | null; original_name: string; extracted_text: string | null; ext: string }>(
-      `SELECT d.id, d.title, d.description, d.case_id, d.client_id, cl.name AS client_name, c.file_no, v.original_name, v.extracted_text, v.ext FROM documents d
-       JOIN clients cl ON cl.id = d.client_id LEFT JOIN cases c ON c.id = d.case_id JOIN document_versions v ON v.document_id = d.id AND v.version_no = d.current_version
+    for (const r of ctx.db.all<{ id: string; title: string; description: string | null; case_id: string | null; client_id: string | null; client_name: string | null; file_no: string | null; original_name: string; extracted_text: string | null; ext: string; consultation_id: string | null; meeting_id: string | null }>(
+      `SELECT d.id, d.title, d.description, d.case_id, d.client_id, d.consultation_id, d.meeting_id, cl.name AS client_name, c.file_no, v.original_name, v.extracted_text, v.ext FROM documents d
+       LEFT JOIN clients cl ON cl.id = d.client_id LEFT JOIN cases c ON c.id = d.case_id JOIN document_versions v ON v.document_id = d.id AND v.version_no = d.current_version
        WHERE ${s.sql} AND ${w} ORDER BY d.archived_at IS NOT NULL, d.updated_at DESC LIMIT 40`,
       p,
     ))
@@ -143,10 +181,12 @@ export function globalSearch(ctx: Ctx, input: { q: string }) {
         type: 'document',
         id: r.id,
         title: r.title,
-        subtitle: [r.original_name, r.file_no ? `ملف ${r.file_no}` : r.client_name].join(' — '),
+        subtitle: [r.original_name, r.file_no ? `ملف ${r.file_no}` : r.client_name].filter(Boolean).join(' — '),
         snippet: snippetOf(r.description, tokens) ?? (r.extracted_text ? 'وُجدت المطابقة في النص المستخرج من الملف' : null),
         caseId: r.case_id,
         clientId: r.client_id,
+        consultationId: r.consultation_id,
+        meetingId: r.meeting_id,
       });
   }
   const counts: Record<string, number> = {};

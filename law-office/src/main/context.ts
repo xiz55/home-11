@@ -18,7 +18,7 @@ export interface Platform {
   openPath(p: string): Promise<string>; // يعيد نص الخطأ أو '' عند النجاح
   showItemInFolder(p: string): void;
   printHtml?(html: string): Promise<void>;
-  htmlToPdf?(html: string): Promise<Buffer>;
+  htmlToPdf?(html: string, opts?: { landscape?: boolean; footer?: string }): Promise<Buffer>;
 }
 
 export interface Ctx {

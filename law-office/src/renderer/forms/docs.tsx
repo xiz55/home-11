@@ -109,6 +109,11 @@ export interface DocDefaults {
   contractId?: string | null;
   poaId?: string | null;
   paymentId?: string | null;
+  consultationId?: string | null;
+  meetingId?: string | null;
+  serviceTxnId?: string | null;
+  /** وصف الارتباط عند إرفاق مستند لاستشارة أو اجتماع (لا تظهر حقول القضية) */
+  lockedLabel?: string;
   category?: DocCategory;
   title?: string;
 }
@@ -157,8 +162,12 @@ export function DocumentAttachForm({ defaults = {}, onClose, onSaved }: { defaul
     contractId: defaults.contractId ?? '',
     poaId: defaults.poaId ?? '',
     paymentId: defaults.paymentId ?? '',
+    consultationId: defaults.consultationId ?? '',
+    meetingId: defaults.meetingId ?? '',
+    serviceTxnId: defaults.serviceTxnId ?? '',
     versionNote: '',
   });
+  const apptLinked = !!(defaults.consultationId || defaults.meetingId);
   useEffect(() => {
     if (staged && !f.values.title) f.set('title', staged.name.replace(/\.[^.]+$/, ''));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -190,7 +199,10 @@ export function DocumentAttachForm({ defaults = {}, onClose, onSaved }: { defaul
           hijriSource: v.hijriSource || null,
           status: v.status as never,
           isInternal: v.isInternal,
-          clientId: v.clientId,
+          clientId: v.clientId || null,
+          consultationId: v.consultationId || null,
+          meetingId: v.meetingId || null,
+          serviceTxnId: v.serviceTxnId || null,
           caseId: v.caseId || null,
           stageId: v.stageId || null,
           hearingId: v.hearingId || null,
@@ -232,7 +244,11 @@ export function DocumentAttachForm({ defaults = {}, onClose, onSaved }: { defaul
         <Select label="الحالة" options={optsFrom(DOC_STATUSES)} {...f.bind('status')} onChange={(x) => f.set('status', x)} placeholder="—" />
         <TextInput label="التاريخ الهجري كما ورد" {...f.bind('hijriText')} onChange={(x) => f.set('hijriText', x)} />
         <TextInput label="مصدر التاريخ الهجري" {...f.bind('hijriSource')} onChange={(x) => f.set('hijriSource', x)} />
-        <LinkFields f={f} lockClient={!!defaults.clientId} lockCase={defaults.caseId !== undefined && defaults.caseId !== null} />
+        {apptLinked ? (
+          <div className="full help">يُحفظ المستند داخل {defaults.lockedLabel ?? 'الموعد'} ومنفصلًا عن ملفات القضايا.</div>
+        ) : (
+          <LinkFields f={f} lockClient={!!defaults.clientId} lockCase={defaults.caseId !== undefined && defaults.caseId !== null} />
+        )}
         <TextArea className="full" label="الوصف" {...f.bind('description')} onChange={(x) => f.set('description', x)} rows={2} />
         <div className="full">
           <Checkbox label="مستند داخلي (يُستبعد من تقارير العميل افتراضيًا)" checked={v.isInternal} onChange={(x) => f.set('isInternal', x)} />
@@ -296,7 +312,7 @@ export function DocumentEditForm({ doc, onClose }: { doc: DocFull; onClose: () =
     hijriSource: doc.hijriSource ?? '',
     status: doc.status,
     isInternal: doc.isInternal,
-    clientId: doc.clientId,
+    clientId: doc.clientId ?? '',
     caseId: doc.caseId ?? '',
     stageId: doc.stageId ?? '',
     hearingId: doc.hearingId ?? '',
@@ -325,7 +341,10 @@ export function DocumentEditForm({ doc, onClose }: { doc: DocFull; onClose: () =
             hijriSource: v.hijriSource || null,
             status: v.status,
             isInternal: v.isInternal,
-            clientId: v.clientId,
+            clientId: v.clientId || null,
+            consultationId: doc.consultationId,
+            meetingId: doc.meetingId,
+            serviceTxnId: doc.serviceTxnId,
             caseId: v.caseId || null,
             stageId: v.stageId || null,
             hearingId: v.hearingId || null,
@@ -351,7 +370,11 @@ export function DocumentEditForm({ doc, onClose }: { doc: DocFull; onClose: () =
         <Select label="الحالة" options={optsFrom(DOC_STATUSES)} {...f.bind('status')} onChange={(x) => f.set('status', x as never)} placeholder="—" />
         <TextInput label="التاريخ الهجري كما ورد" {...f.bind('hijriText')} onChange={(x) => f.set('hijriText', x)} />
         <TextInput label="مصدره" {...f.bind('hijriSource')} onChange={(x) => f.set('hijriSource', x)} />
-        <LinkFields f={f} lockClient lockCase={false} />
+        {doc.consultationId || doc.meetingId ? (
+          <div className="full help">مرفق {doc.consultationId ? `بالاستشارة ${doc.consultationRef ?? ''}` : `بالاجتماع ${doc.meetingRef ?? ''}`} ويبقى مرتبطًا بها.</div>
+        ) : (
+          <LinkFields f={f} lockClient lockCase={false} />
+        )}
         <TextArea className="full" label="الوصف" {...f.bind('description')} onChange={(x) => f.set('description', x)} rows={2} />
         <div className="full">
           <Checkbox label="مستند داخلي" checked={v.isInternal} onChange={(x) => f.set('isInternal', x)} />

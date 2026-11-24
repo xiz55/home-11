@@ -24,6 +24,9 @@ import * as reminders from '../services/reminders';
 import * as reports from '../services/reports';
 import * as backup from '../services/backup';
 import * as integration from '../services/integration';
+import * as appts from '../services/appointments';
+import * as officeReport from '../services/officeReport';
+import { riyadhToUtcIso } from '../../shared/dates';
 import { listActivity } from '../services/activity';
 import { runtime } from '../runtime';
 import fs from 'node:fs';
@@ -303,6 +306,40 @@ export const REGISTRY = {
   'poas.create': def('user', S.poaInput, (ctx, i) => finance.createPoa(ctx, i)),
   'poas.update': def('user', S.poaUpdateInput, (ctx, i) => finance.updatePoa(ctx, i)),
 
+  'adjustments.create': def('user', S.adjustmentInput, (ctx, i) => finance.createAdjustment(ctx, i)),
+  'adjustments.void': def('user', S.paymentVoidInput, (ctx, i) => finance.voidAdjustment(ctx, i)),
+
+  // ———— الاستشارات والاجتماعات ————
+  'appointments.overview': def('user', empty, (ctx) => appts.appointmentsOverview(ctx), { passive: true }),
+  'appointments.conflicts': def(
+    'user',
+    S.conflictCheckInput,
+    (ctx, i) => {
+      const startsAt = riyadhToUtcIso(i.date, i.startTime);
+      const endsAt = i.endTime ? riyadhToUtcIso(i.date, i.endTime) : new Date(new Date(startsAt).getTime() + (i.durationMin ?? 60) * 60_000).toISOString();
+      return appts.findConflicts(ctx, { responsibleUserId: i.responsibleUserId, startsAt, endsAt, excludeKind: i.excludeKind ?? undefined, excludeId: i.excludeId });
+    },
+    { passive: true },
+  ),
+  'consultations.list': def('user', S.apptListInput, (ctx, i) => appts.listConsultations(ctx, i)),
+  'consultations.get': def('user', byId, (ctx, i) => appts.getConsultation(ctx, i)),
+  'consultations.create': def('user', S.consultationInput, (ctx, i) => appts.createConsultation(ctx, i)),
+  'consultations.update': def('user', S.consultationUpdateInput, (ctx, i) => appts.updateConsultation(ctx, i)),
+  'consultations.linkCase': def('user', S.linkConsultationCaseInput, (ctx, i) => appts.linkConsultationCase(ctx, i)),
+  'opinions.create': def('user', S.opinionInput, (ctx, i) => appts.createOpinion(ctx, i)),
+  'opinions.update': def('user', S.opinionUpdateInput, (ctx, i) => appts.updateOpinion(ctx, i)),
+  'opinions.revision': def('user', byId, (ctx, i) => appts.getOpinionRevision(ctx, i)),
+  'opinions.deliver': def('user', S.opinionDeliveryInput, (ctx, i) => appts.recordOpinionDelivery(ctx, i)),
+  'meetings.list': def('user', S.apptListInput, (ctx, i) => appts.listMeetings(ctx, i)),
+  'meetings.get': def('user', byId, (ctx, i) => appts.getMeeting(ctx, i)),
+  'meetings.create': def('user', S.meetingInput, (ctx, i) => appts.createMeeting(ctx, i)),
+  'meetings.update': def('user', S.meetingUpdateInput, (ctx, i) => appts.updateMeeting(ctx, i)),
+  'meetingItems.save': def('user', S.meetingItemInput, (ctx, i) => appts.saveMeetingItem(ctx, i)),
+  'meetingItems.remove': def('user', byId, (ctx, i) => appts.removeMeetingItem(ctx, i)),
+  'meetingItems.toTask': def('user', S.meetingItemToTaskInput, (ctx, i) => appts.meetingItemToTask(ctx, i)),
+  'serviceTxns.create': def('user', S.serviceTxnInput, (ctx, i) => appts.createServiceTxn(ctx, i)),
+  'serviceTxns.void': def('user', S.paymentVoidInput, (ctx, i) => appts.voidServiceTxn(ctx, i)),
+
   // ———— الملاحظات وسجل التواصل ————
   'notes.list': def('user', z.object({ clientId: S.id, caseId: S.optId }), (ctx, i) => notes.listNotes(ctx, i)),
   'notes.save': def('user', S.noteInput, (ctx, i) => notes.saveNote(ctx, i)),
@@ -314,6 +351,9 @@ export const REGISTRY = {
   'reports.render': def('user', S.reportInput, (ctx, i) => reports.renderReport(ctx, i)),
   'reports.print': def('user', S.reportInput, (ctx, i) => reports.printReport(ctx, i)),
   'reports.savePdf': def('user', S.reportInput, (ctx, i) => reports.saveReportPdf(ctx, i)),
+  'reports.consultationSummary': def('user', z.object({ id: S.id, includeInternalNotes: z.boolean().default(false), includeFees: z.boolean().default(false), action: z.enum(['preview', 'print', 'pdf']) }), (ctx, i) => reports.consultationSummaryOutput(ctx, i)),
+  'reports.office': def('user', S.officeReportInput, (ctx, i) => officeReport.generateOfficeReport(ctx, i)),
+  'reports.officeExport': def('user', S.officeReportExportInput, (ctx, i) => officeReport.exportOfficeReport(ctx, i)),
 
   // ———— النسخ الاحتياطي والاستعادة ————
   'backup.status': def('owner', empty, (ctx) => backup.backupStatus(ctx), { passive: true }),

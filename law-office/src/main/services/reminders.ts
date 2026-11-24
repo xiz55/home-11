@@ -4,6 +4,7 @@ import { uuid } from '../context';
 import { riyadhToUtcIso, addDays, fmtDateTime, fmtDate } from '../../shared/dates';
 import { readSetting } from './settings';
 import { caseScope, requireUser } from './access';
+import { reminderVisible, syncApptReminders } from './appointments';
 
 export function clearReminders(ctx: Ctx, entityType: string, entityId: string) {
   ctx.db.run('DELETE FROM reminders WHERE entity_type = ? AND entity_id = ? AND fired_at IS NULL AND missed_at IS NULL', [entityType, entityId]);
@@ -105,9 +106,11 @@ export function missedReminders(ctx: Ctx) {
     .all<{ id: string; label: string; remind_at: string; event_at: string; case_id: string | null; entity_type: string; entity_id: string }>(
       `SELECT r.id, r.label, r.remind_at, r.event_at, r.case_id, r.entity_type, r.entity_id FROM reminders r
        WHERE (r.missed_at IS NOT NULL OR r.fired_at IS NOT NULL) AND r.acknowledged_at IS NULL AND (r.case_id IS NULL OR ${scope.sql})
-       ORDER BY r.remind_at DESC LIMIT 100`,
+       ORDER BY r.remind_at DESC LIMIT 200`,
       scope.params,
     )
+    .filter((r) => reminderVisible(ctx, r.entity_type, r.entity_id))
+    .slice(0, 100)
     .map((r) => ({ id: r.id, label: r.label, remindAt: r.remind_at, eventAt: r.event_at, caseId: r.case_id, entityType: r.entity_type, entityId: r.entity_id }));
 }
 
@@ -128,5 +131,7 @@ export function rebuildAllReminders(ctx: Ctx) {
     for (const h of ctx.db.all<{ id: string }>("SELECT id FROM hearings WHERE status = 'scheduled' AND starts_at > ?", [nowIso])) syncHearingReminders(ctx, h.id);
     for (const t of ctx.db.all<{ id: string }>("SELECT id FROM tasks WHERE status != 'done' AND due_date IS NOT NULL")) syncTaskReminder(ctx, t.id);
     for (const d of ctx.db.all<{ id: string }>("SELECT id FROM deadlines WHERE status = 'open'")) syncDeadlineReminder(ctx, d.id);
+    for (const k of ctx.db.all<{ id: string }>("SELECT id FROM consultations WHERE status IN ('pending','confirmed') AND starts_at > ?", [nowIso])) syncApptReminders(ctx, 'consultation', k.id);
+    for (const m of ctx.db.all<{ id: string }>("SELECT id FROM meetings WHERE status IN ('pending','confirmed') AND starts_at > ?", [nowIso])) syncApptReminders(ctx, 'meeting', m.id);
   });
 }
