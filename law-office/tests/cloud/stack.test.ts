@@ -101,7 +101,8 @@ d('الحساب السحابي عبر مكدس Supabase حقيقي (دخول، �
     gw = await gateway();
     await adminCreateUser(email, password);
     await setupOwner(A.core, 'S-A');
-    await seedCompany(A.core, 'S-A');
+    const ids = await seedCompany(A.core, 'S-A');
+    await call(A.core, 'S-A', 'payments.create', { contractId: ids.contractId, amount: 4000000, paidOn: '2026-03-05', method: 'تحويل بنكي' });
     await call(A.core, 'S-A', 'consultations.create', { channel: 'phone', subject: 'استشارة عمالية تجريبية', scheduledAt: '2026-11-26T10:00', durationMinutes: 30, feeMode: 'paid', feeAmount: 50000, newPerson: { name: 'طالب استشارة خيالي', phone: '0500000099' } }).catch(() => undefined);
     A.core.cloud = mk(A, secA, 'جهاز المكتب');
     B.core.cloud = mk(B, secB, 'ماك تجريبي');
@@ -132,6 +133,23 @@ d('الحساب السحابي عبر مكدس Supabase حقيقي (دخول، �
     expect(A.core.cloud!.getStatus()).toMatchObject({ phase: 'idle', pending: 0 });
     expect(A.core.cloud!.getStatus().lastSyncAt).toBeTruthy();
     expect(localCounts(A.core.db)).toEqual(before); // لم يُحذف شيء من الجهاز الأصلي
+  });
+
+  it('3b. تقرير التحقق من النقل: الأعداد والمعرّفات ومجموع الدفعات متطابقة، ويكشف أي فرق قبل المزامنة', async () => {
+    const r = await call(A.core, 'S-A', 'cloud.migrationReport', {});
+    expect(r.ok).toBe(true);
+    expect(r.rows.find((x: { table: string }) => x.table === 'clients')).toMatchObject({ local: 1, server: 1, idsMatch: true });
+    expect(r.rows.length).toBeGreaterThan(5);
+    expect(r.paymentsServer).toBe(4000000);
+    expect(r.paymentsLocal).toBe(4000000);
+    // تعديل لم يُرسل بعد ← التقرير يظهر الفرق ولا يدّعي التطابق
+    await call(A.core, 'S-A', 'clients.create', { kind: 'individual', name: 'عميل لم يُزامن بعد', phone: '0500000044' });
+    const diff = await call(A.core, 'S-A', 'cloud.migrationReport', {});
+    expect(diff.ok).toBe(false);
+    expect(diff.pending).toBeGreaterThan(0);
+    expect(diff.rows.find((x: { table: string }) => x.table === 'clients')).toMatchObject({ local: 2, server: 1 });
+    await call(A.core, 'S-A', 'cloud.syncNow', {});
+    expect((await call(A.core, 'S-A', 'cloud.migrationReport', {})).ok).toBe(true);
   });
 
   it('4. جهاز جديد فارغ: الدخول ثم اختيار المكتب والانضمام، ويصل كل شيء بالأرقام نفسها', async () => {

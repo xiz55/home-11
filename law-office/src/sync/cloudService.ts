@@ -8,6 +8,7 @@ import { RpcTransport, OfflineError } from './transport';
 import { BlobSync, type BlobStore } from './blobs';
 import { createCloudOffice, joinCloudOffice, localCounts } from './setup';
 import { getState, setState } from './local';
+import { localFingerprint, compareFingerprints, type Fingerprint } from './report';
 
 export interface SecretStore {
   get(key: string): Promise<string | null>;
@@ -264,6 +265,15 @@ export class CloudService {
     await this.touchDevice();
     this.emit({ officeId, officeName: input.officeName });
     return { officeId, counts };
+  }
+
+  /** تقرير التحقق من النقل: يقارن هذا الجهاز بالخادم بعد المزامنة (لصاحب المكتب). */
+  async migrationReport() {
+    const officeId = getState(this.d.db(), 'office_id');
+    if (!officeId) throw new Error('هذا الجهاز غير مرتبط بمكتب سحابي');
+    const { data, error } = await this.requireSb().rpc('app_migration_report', { p_office: officeId });
+    if (error) throw new Error(error.message);
+    return { ...compareFingerprints(localFingerprint(this.d.db()), data as Fingerprint), pending: this.engine?.pendingCount() ?? 0 };
   }
 
   async joinOffice(officeId: string) {

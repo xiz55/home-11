@@ -34,6 +34,8 @@ jobs:
         env:
           LAWSYNC_REQUIRE_PG: '1'
         run: npx vitest run
+      - name: Cloud backup + restore into a separate server, compared record by record
+        run: bash scripts/cloud-restore-test.sh
       - name: Shared logic on the iPhone engine (sql.js/WebAssembly)
         env:
           LAWSYNC_REQUIRE_PG: '1'

@@ -456,6 +456,13 @@ export const REGISTRY = {
       throw new AppError('CONFLICT', (e as Error).message);
     }
   }),
+  'cloud.migrationReport': def('owner', empty, async (_ctx, _i, core) => {
+    try {
+      return await requireCloud(core).migrationReport();
+    } catch (e) {
+      throw new AppError('STORAGE', `تعذر إعداد تقرير التحقق: ${(e as Error).message}`);
+    }
+  }),
   'cloud.syncNow': def('user', empty, async (_ctx, _i, core) => {
     try {
       return await requireCloud(core).syncNow();

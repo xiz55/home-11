@@ -8,6 +8,7 @@ import { useApi } from '../lib/hooks';
 import { useSession } from '../lib/session';
 import { When } from '../lib/display';
 import { fmtSize } from '../forms/docs';
+import { fmtAmount } from '../../shared/money';
 import type { MethodOutput } from '../../main/ipc/registry';
 
 type Status = MethodOutput<'cloud.status'>;
@@ -409,17 +410,81 @@ export function CloudTab() {
       {linked && <Devices />}
       <Mfa />
       {linked && isOwner && <Invite />}
-      {linked && isOwner && (
-        <Card title="سياسة المكتب">
-          <Checkbox label="إلزام كل الأعضاء بالتحقق بخطوتين" checked={false} onChange={async (on) => { try { await api('cloud.requireMfa', { on }); toast.success('حُفظت السياسة'); } catch (e) { toast.error(e); } }} hint="فعّله لحسابك أولًا" />
-        </Card>
-      )}
+      {linked && isOwner && <OfficePolicy officeId={'officeId' in s ? s.officeId : null} />}
+      {linked && isOwner && <MigrationCheck />}
       <Card title="هذا الجهاز">
         <Button icon={<Smartphone />} onClick={async () => { await api('cloud.signOut', {}); await refresh(); }}>
           الخروج من الحساب السحابي على هذا الجهاز
         </Button>
       </Card>
     </div>
+  );
+}
+
+function OfficePolicy({ officeId }: { officeId: string | null }) {
+  const offices = useApi(() => api('cloud.offices', {}), []);
+  const cur = offices.data?.find((o) => o.office_id === officeId);
+  return (
+    <Card title="سياسة المكتب">
+      <Checkbox
+        label="إلزام كل الأعضاء بالتحقق بخطوتين"
+        checked={!!cur?.require_mfa}
+        onChange={async (on) => {
+          try {
+            await api('cloud.requireMfa', { on });
+            toast.success('حُفظت السياسة');
+          } catch (e) {
+            toast.error(e);
+          }
+          offices.reload();
+        }}
+        hint="فعّله لحسابك أولًا"
+      />
+    </Card>
+  );
+}
+
+/** تقرير التحقق من نقل البيانات: يقارن هذا الجهاز بالخادم (أعداد، معرّفات، مجموع الدفعات). لا يغيّر شيئًا. */
+function MigrationCheck() {
+  const [r, setR] = useState<MethodOutput<'cloud.migrationReport'> | null>(null);
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try {
+      setR(await api('cloud.migrationReport', {}));
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card title="التحقق من نقل البيانات" actions={<Button loading={busy} onClick={run}>تحقق الآن</Button>}>
+      {!r ? (
+        <div className="help">يقارن السجلات على هذا الجهاز بما على الخادم: العدد لكل جدول، وتطابق المعرّفات والأرقام، ومجموع الدفعات. يمكن تشغيله أي عدد من المرات.</div>
+      ) : (
+        <div className="stack g2">
+          {r.ok ? (
+            <Alert tone="success">متطابق: كل السجلات والمعرّفات ومجموع الدفعات على الخادم مطابقة لهذا الجهاز.</Alert>
+          ) : (
+            <Alert tone="warning">
+              يوجد فرق{r.pending ? ` — ${r.pending} تغيير لم يُرسل بعد؛ اضغط «مزامنة الآن» ثم أعد التحقق` : ''}. راجع الصفوف المعلّمة أدناه.
+            </Alert>
+          )}
+          <KV items={[['مجموع الدفعات (هذا الجهاز)', <span key="a">{fmtAmount(r.paymentsLocal)}</span>], ['مجموع الدفعات (الخادم)', <span key="b">{fmtAmount(r.paymentsServer)}</span>]]} />
+          <DataTable
+            rows={r.rows}
+            rowKey={(x) => x.table}
+            columns={[
+              { key: 't', header: 'الجدول', render: (x) => <Ltr>{x.table}</Ltr> },
+              { key: 'l', header: 'هذا الجهاز', render: (x) => x.local },
+              { key: 's', header: 'الخادم', render: (x) => x.server },
+              { key: 'm', header: 'النتيجة', render: (x) => (x.local === x.server && x.idsMatch ? <Badge tone="success">متطابق</Badge> : <Badge tone="warning">فرق</Badge>) },
+            ]}
+          />
+        </div>
+      )}
+    </Card>
   );
 }
 
