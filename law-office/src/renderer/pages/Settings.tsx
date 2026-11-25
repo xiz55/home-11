@@ -6,7 +6,8 @@ import { ApiError, api, invalidate } from '../lib/api';
 import { useApi, useForm } from '../lib/hooks';
 import { useSession, useOs } from '../lib/session';
 import { CloudTab } from './Cloud';
-import { isIOS } from '../lib/platform';
+import { isIOS, isWeb } from '../lib/platform';
+import { LinkTab } from './Link';
 import { When } from '../lib/display';
 import { LOOKUP_LISTS, LOOKUP_LIST_KEYS, PERMISSIONS, ROLES, type LookupListKey, type Permission } from '../../shared/constants';
 import { fmtDateTime } from '../../shared/dates';
@@ -15,11 +16,12 @@ import { fmtSize } from '../forms/docs';
 import type { MethodOutput } from '../../main/ipc/registry';
 import { RecoveryCodeNotice } from './Auth';
 
-type Tab = 'office' | 'users' | 'lists' | 'reminders' | 'storage' | 'cloud' | 'integration' | 'activity' | 'account';
+type Tab = 'office' | 'users' | 'lists' | 'reminders' | 'storage' | 'link' | 'cloud' | 'integration' | 'activity' | 'account';
 
 export function SettingsPage() {
   const { isOwner, state } = useSession();
   const cloudLinked = !!(state as { cloudLinked?: boolean } | null)?.cloudLinked;
+  const hubMode = !!(state as { hubLinked?: boolean; hubServer?: boolean } | null)?.hubLinked || !!(state as { hubServer?: boolean } | null)?.hubServer;
   const [sp, setSp] = useSearchParams();
   const tab = ((sp.get('tab') as Tab) ?? (isOwner ? 'office' : 'account')) as Tab;
   const setTab = (t: Tab) => setSp({ tab: t }, { replace: true });
@@ -40,7 +42,8 @@ export function SettingsPage() {
           { key: 'lists', label: 'القوائم الافتراضية', hidden: !isOwner },
           { key: 'reminders', label: 'التنبيهات والأمان', hidden: !isOwner },
           { key: 'storage', label: 'مكان الحفظ والنسخ الاحتياطي', hidden: !isOwner || isIOS() },
-          { key: 'cloud', label: 'الحساب السحابي والمزامنة', hidden: !isOwner && !cloudLinked },
+          { key: 'link', label: 'ربط الأجهزة بجهاز المكتب', hidden: !isOwner || isIOS() },
+          { key: 'cloud', label: 'الحساب السحابي والمزامنة', hidden: (!isOwner && !cloudLinked) || isWeb() || hubMode },
           { key: 'integration', label: 'الربط بأدوات الذكاء الاصطناعي', hidden: !isOwner || isIOS() },
           { key: 'activity', label: 'سجل الأنشطة', hidden: !isOwner },
           { key: 'account', label: 'حسابي' },
@@ -51,6 +54,7 @@ export function SettingsPage() {
       {tab === 'lists' && isOwner && <ListsTab />}
       {tab === 'reminders' && isOwner && <RemindersTab />}
       {tab === 'storage' && isOwner && <StorageTab />}
+      {tab === 'link' && <LinkTab />}
       {tab === 'cloud' && <CloudTab />}
       {tab === 'integration' && isOwner && <IntegrationTab />}
       {tab === 'activity' && isOwner && <ActivityTab />}

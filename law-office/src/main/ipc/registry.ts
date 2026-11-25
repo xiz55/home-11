@@ -28,6 +28,7 @@ import * as appts from '../services/appointments';
 import * as officeReport from '../services/officeReport';
 import { riyadhToUtcIso } from '../../shared/dates';
 import { syncEnabled } from '../../sync/engine';
+import { getState as syncState } from '../../sync/local';
 import { listActivity } from '../services/activity';
 import { runtime } from '../runtime';
 import fs from 'node:fs';
@@ -60,6 +61,12 @@ function requireCloud(core: AppCore) {
 }
 
 /** جلسة محلية لمستخدم المكتب المرتبط بالحساب السحابي (بعد مزامنة بياناته). */
+/** مخزن حالة المرفقات النشط: خادم المكتب المحلي إن كان الجهاز مرتبطًا به، وإلا الحساب السحابي. */
+function activeBlobs(core: AppCore) {
+  if (core.hubClient?.linked()) return core.hubClient.blobs;
+  return requireCloud(core).blobs;
+}
+
 function startCloudSession(ctx: Ctx, core: AppCore, localUserId: string) {
   const u = auth.loadSessionUser(ctx, localUserId);
   if (!u) throw new AppError('CONFLICT', 'لم تكتمل المزامنة الأولى لبيانات حسابك على هذا الجهاز بعد. تحقق من الاتصال وأعد المحاولة.');
@@ -89,7 +96,9 @@ export const REGISTRY = {
         appVersion: runtime.appVersion,
         platform: runtime.platform,
         cloud: core.cloud ? core.cloud.getStatus() : null,
-        cloudLinked: !!core.cloud && syncEnabled(ctx.db),
+        cloudLinked: !!core.cloud && syncEnabled(ctx.db) && syncState(ctx.db, 'mode') !== 'hub',
+        hubLinked: !!core.hubClient?.linked(),
+        hubServer: !!core.hub?.running(),
         customDataDir: runtime.customDataDir ? ctx.paths.dataDir : null,
       };
     },
@@ -388,7 +397,7 @@ export const REGISTRY = {
   }),
 
   // ———— الحساب السحابي والمزامنة ————
-  'cloud.status': def('public', empty, (_ctx, _i, core) => core.cloud?.getStatus() ?? { phase: 'not_configured' as const }, { passive: true }),
+  'cloud.status': def('public', empty, (_ctx, _i, core) => (core.hubClient?.linked() ? { ...core.hubClient.getStatus(), mode: 'hub' as const } : core.cloud?.getStatus()) ?? { phase: 'not_configured' as const }, { passive: true }),
   'cloud.config': def('public', empty, (_ctx, _i, core) => core.cloud?.config() ?? { url: null, configured: false }, { passive: true }),
   'cloud.configure': def('public', z.object({ url: z.string().trim().max(200), anonKey: z.string().trim().max(1000) }), async (ctx, i, core) => {
     // جهاز جديد بلا حسابات: مسموح؛ جهاز مهيأ: لصاحب المكتب فقط
@@ -513,20 +522,101 @@ export const REGISTRY = {
     }),
   ),
   'cloud.blobState': def('user', z.object({ versionIds: z.array(S.id).max(500) }), (_ctx, i, core) => {
-    const c = requireCloud(core);
+    const c = { blobs: activeBlobs(core) };
     c.blobs?.scan();
     return Object.fromEntries(i.versionIds.map((v) => [v, c.blobs?.state(v) ?? null]));
   }, { passive: true }),
   'cloud.blobPin': def('user', z.object({ versionId: S.id, pinned: z.boolean() }), async (_ctx, i, core) => {
-    const c = requireCloud(core);
+    const c = { blobs: activeBlobs(core) };
     c.blobs!.setPinned(i.versionId, i.pinned);
     if (i.pinned) await c.blobs!.download(i.versionId).catch(() => undefined);
     return c.blobs!.state(i.versionId);
   }),
   'cloud.blobEvict': def('user', z.object({ versionId: S.id }), async (_ctx, i, core) => {
-    const c = requireCloud(core);
+    const c = { blobs: activeBlobs(core) };
     await c.blobs!.evict(i.versionId);
     return c.blobs!.state(i.versionId);
+  }),
+
+  // ———— خادم المكتب المحلي (جهاز المكتب الدائم) ————
+  'hub.state': def('owner', empty, (_ctx, _i, core) => (core.hub ? core.hub.state() : null), { passive: true }),
+  'hub.enable': def('owner', z.object({ port: z.number().int().min(1024).max(65535).default(8787) }), async (_ctx, i, core) => {
+    if (!core.hub) throw new AppError('INTERNAL', 'خادم المكتب غير متاح في هذا الإصدار');
+    if (core.hubClient?.linked()) throw new AppError('CONFLICT', 'هذا الجهاز مرتبط بجهاز مكتب آخر؛ لا يكون خادمًا في الوقت نفسه.');
+    try {
+      await core.hub.enable(i.port);
+    } catch (e) {
+      throw new AppError('STORAGE', `تعذر تشغيل خادم المكتب على المنفذ ${i.port}: ${(e as Error).message}`);
+    }
+    return core.hub.state();
+  }),
+  'hub.disable': def('owner', empty, async (_ctx, _i, core) => {
+    await core.hub?.disable();
+    return core.hub?.state() ?? null;
+  }),
+  'hub.setGmail': def('owner', z.object({ user: z.string().trim().email().max(200), appPassword: z.string().trim().min(16).max(40) }), async (_ctx, i, core) => {
+    if (!core.hub) throw new AppError('INTERNAL', 'خادم المكتب غير متاح');
+    await core.hub.setGmail(i.user, i.appPassword);
+    return core.hub.state();
+  }),
+  'hub.sendTest': def('owner', z.object({ to: z.string().trim().email().max(200) }), async (_ctx, i, core) => {
+    try {
+      await core.hub!.sendTest(i.to);
+    } catch (e) {
+      throw new AppError('STORAGE', `تعذر الإرسال: ${(e as Error).message}. تأكد من البريد وكلمة مرور التطبيق من حساب Google.`);
+    }
+    return { ok: true };
+  }),
+  'hub.setUserEmail': def('owner', z.object({ userId: S.id, email: z.string().trim().email().max(200).nullable() }), (_ctx, i, core) => {
+    core.hub!.setUserEmail(i.userId, i.email);
+    return core.hub!.state();
+  }),
+  'hub.setPublicUrl': def('owner', z.object({ url: z.string().trim().url().max(300).nullable() }), (_ctx, i, core) => {
+    core.hub!.setPublicUrl(i.url);
+    return core.hub!.state();
+  }),
+  'hub.revokeDevice': def('owner', byId, (_ctx, i, core) => {
+    core.hub!.revokeDevice(i.id);
+    return core.hub!.state();
+  }),
+
+  // ———— ربط هذا الجهاز (الماك) بخادم المكتب ————
+  'hub.clientState': def('user', empty, (_ctx, _i, core) => ({ linked: !!core.hubClient?.linked(), url: core.hubClient?.hubUrl() ?? null, status: core.hubClient?.getStatus() ?? null }), { passive: true }),
+  'hub.linkStart': def('owner', z.object({ url: z.string().trim().max(300), username: z.string().trim().min(1).max(100), password: z.string().min(1).max(200) }), async (ctx, i, core) => {
+    if (!core.hubClient) throw new AppError('INTERNAL', 'الربط غير متاح في هذا الإصدار');
+    if (core.hub?.running()) throw new AppError('CONFLICT', 'هذا الجهاز يعمل خادمًا للمكتب؛ لا يُربط بجهاز آخر.');
+    try {
+      return await core.hubClient.linkStart(i.url, i.username, i.password);
+    } catch (e) {
+      throw new AppError('VALIDATION', (e as Error).message, { password: (e as Error).message });
+    }
+  }),
+  'hub.linkVerify': def('owner', z.object({ url: z.string().trim().max(300), challengeId: S.id, code: z.string().trim().regex(/^\d{6}$/, 'أدخل الرمز المكون من 6 أرقام') }), async (ctx, i, core) => {
+    const c = core.hubClient;
+    if (!c) throw new AppError('INTERNAL', 'الربط غير متاح');
+    // نسخة احتياطية كاملة لبيانات هذا الجهاز قبل استبدالها بنسخة جهاز المكتب — تبقى على هذا الجهاز
+    const backupFile = path.join(ctx.paths.autoBackupsDir, `قبل-الربط-بجهاز-المكتب-${ctx.now().toISOString().replace(/[:.]/g, '-')}.lobk`);
+    await backup.writePackage(ctx.db, ctx.paths, backupFile, { appVersion: runtime.appVersion, createdBy: ctx.user!.username, now: ctx.now() });
+    let r;
+    try {
+      r = await c.linkVerify(i.url, i.challengeId, i.code);
+    } catch (e) {
+      throw new AppError('VALIDATION', (e as Error).message, { code: (e as Error).message });
+    }
+    // حسابات هذا الجهاز استُبدلت بحسابات المكتب: يدخل المستخدم بحسابه في المكتب
+    core.sessions.clear();
+    return { ...r, backupFile };
+  }),
+  'hub.syncNow': def('user', empty, async (_ctx, _i, core) => {
+    try {
+      return await core.hubClient!.syncNow();
+    } catch (e) {
+      throw new AppError('STORAGE', `تعذرت المزامنة الآن: ${(e as Error).message}. التعديلات محفوظة على هذا الجهاز وستُرسل لاحقًا.`);
+    }
+  }),
+  'hub.unlink': def('owner', empty, async (_ctx, _i, core) => {
+    await core.hubClient?.unlink();
+    return { ok: true };
   }),
 
   // ———— التكامل الاختياري ————

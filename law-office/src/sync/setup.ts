@@ -59,3 +59,17 @@ export function joinCloudOffice(db: Db, officeId: string) {
     installSyncTriggers(db);
   });
 }
+
+/** يفرّغ بيانات المكتب المحلية من هذا الجهاز ليستلم نسخة جهاز المكتب كاملة.
+ * لا يُستدعى إلا بعد نسخة احتياطية كاملة (تتولاها شاشة الربط). ملفات المرفقات على القرص لا تُحذف. */
+export function clearLocalOfficeData(db: Db) {
+  db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    db.tx(() => {
+      for (const t of [...SYNC_TABLES].reverse()) if (t !== 'settings') db.run(`DELETE FROM ${t}`);
+      db.run('DELETE FROM sync_outbox');
+    });
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+}

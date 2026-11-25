@@ -61,6 +61,12 @@ export const TABLE_KEYS: Partial<Record<SyncTable, string[]>> = {
 };
 export const keyCols = (t: string): string[] => TABLE_KEYS[t as SyncTable] ?? ['id'];
 
+/** وضع «خادم المكتب» المحلي: أجهزة صاحب المكتب نفسه تتزامن مع جهاز المكتب، فتُنقل تجزئات كلمات المرور
+ * (scrypt) ليعمل الدخول المحلي على كل جهاز بالحساب نفسه. لا يُستخدم مع الخادم السحابي. */
+export function setCredentialSync(on: boolean) {
+  LOCAL_FIELDS.users = on ? ['failed_attempts', 'locked_until', 'last_login_at'] : ['password_hash', 'recovery_hash', 'failed_attempts', 'locked_until', 'last_login_at'];
+}
+
 /** حقول لا تُرفع (أسرار أو حالة جهاز). */
 export const LOCAL_FIELDS: Partial<Record<SyncTable, string[]>> = {
   users: ['password_hash', 'recovery_hash', 'failed_attempts', 'locked_until', 'last_login_at'],

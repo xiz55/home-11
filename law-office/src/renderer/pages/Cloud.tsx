@@ -49,7 +49,7 @@ export function CloudStatusChip() {
   const pendingBlobs = (s.blobs?.pending_upload ?? 0) + (s.blobs?.uploading ?? 0) + (s.blobs?.failed ?? 0);
   const info = s.phase === 'idle' && (s.pending > 0 || pendingBlobs > 0) ? { label: 'تغييرات معلقة', tone: 'warning' as const } : PHASE[s.phase] ?? PHASE.idle;
   return (
-    <button className="cloud-chip" onClick={() => navigate('/settings?tab=cloud')} title="حالة المزامنة" aria-label={`حالة المزامنة: ${info.label}`}>
+    <button className="cloud-chip" onClick={() => navigate((s as { mode?: string }).mode === 'hub' ? '/settings?tab=link' : '/settings?tab=cloud')} title="حالة المزامنة" aria-label={`حالة المزامنة: ${info.label}`}>
       {s.phase === 'offline' || s.phase === 'revoked' ? <CloudOff size={16} /> : s.phase === 'syncing' || s.phase === 'uploading' || s.phase === 'downloading' ? <RefreshCw size={16} className="spin" /> : <Cloud size={16} />}
       <Badge tone={info.tone}>{info.label}</Badge>
       {s.pending > 0 && <span className="help">{s.pending} معلّق</span>}

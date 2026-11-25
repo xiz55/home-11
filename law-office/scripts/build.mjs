@@ -50,6 +50,13 @@ if (!only || only === 'backend') {
 if (!only || only === 'renderer') {
   fs.rmSync(path.join(dist, 'renderer'), { recursive: true, force: true });
   await viteBuild({ configFile: path.join(root, 'vite.config.ts'), logLevel: 'warn' });
+  // واجهة الرابط الآمن التي يقدّمها «خادم المكتب» للآيفون
+  await viteBuild({ configFile: path.join(root, 'vite.web.config.ts'), logLevel: 'warn' });
+  const web = path.join(dist, 'web');
+  fs.copyFileSync(path.join(root, 'src/web/manifest.webmanifest'), path.join(web, 'manifest.webmanifest'));
+  fs.copyFileSync(path.join(root, 'resources/icon-512.png'), path.join(web, 'icon.png'));
+  const pdfjsWeb = path.join(root, 'node_modules/pdfjs-dist');
+  for (const sub of ['cmaps', 'standard_fonts', 'wasm']) copyDir(path.join(pdfjsWeb, sub), path.join(web, 'pdfjs', sub));
 }
 copyAssets();
 console.log('build ok');

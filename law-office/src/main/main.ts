@@ -1,5 +1,5 @@
 // نقطة دخول Electron. الواجهة معزولة (contextIsolation + sandbox، بلا nodeIntegration)، وكل الوصول للبيانات والملفات هنا.
-import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, protocol, session, shell, type MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, powerSaveBlocker, protocol, session, shell, type MenuItemConstructorOptions } from 'electron';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -14,6 +14,9 @@ import { readSetting } from './services/settings';
 import { CloudService, type SecretStore } from '../sync/cloudService';
 import { setBlobEnsurer } from './services/documents';
 import { attachmentPath } from './paths';
+import { HubClient } from '../sync/hubClient';
+import { HubController } from '../hub/controller';
+import { getState } from '../sync/local';
 import { safeStorage } from 'electron';
 
 const APP_ID = 'com.lawoffice.manager';
@@ -428,8 +431,53 @@ function setupCloud(c: AppCore) {
     autoDownload: () => autoDownload,
     onStatus: (s) => mainWindow?.webContents.send('cloud:status', s),
   });
-  setBlobEnsurer((versionId) => c.cloud!.blobs!.download(versionId));
+  const blobStore = {
+    has: (n: string) => fs.existsSync(attachmentPath(c.paths, n)),
+    read: (n: string) => new Uint8Array(fs.readFileSync(attachmentPath(c.paths, n))),
+    write: (n: string, b: Uint8Array) => {
+      const f = attachmentPath(c.paths, n);
+      fs.mkdirSync(path.dirname(f), { recursive: true });
+      fs.writeFileSync(`${f}.part`, b);
+      fs.renameSync(`${f}.part`, f);
+    },
+    remove: (n: string) => fs.rmSync(attachmentPath(c.paths, n), { force: true }),
+  };
+  // ربط هذا الجهاز (الماك) بخادم المكتب المحلي
+  c.hubClient = new HubClient({
+    db: () => c.db,
+    secrets,
+    blobStore,
+    device: { name: os.hostname(), platform: platformName, appVersion: app.getVersion() },
+    autoDownload: () => autoDownload,
+    onStatus: (s) => mainWindow?.webContents.send('cloud:status', { ...s, mode: 'hub' }),
+  });
+  // هذا الجهاز خادم المكتب (جهاز المكتب الدائم)
+  let blocker: number | null = null;
+  const keepAwake = () => {
+    if (c.hub?.running()) {
+      // جهاز المكتب يبقى متاحًا: يمنع تعليق البرنامج، ويبدأ مع تسجيل الدخول إلى ويندوز
+      if (blocker === null) blocker = powerSaveBlocker.start('prevent-app-suspension');
+      app.setLoginItemSettings({ openAtLogin: true });
+    } else if (blocker !== null) {
+      powerSaveBlocker.stop(blocker);
+      blocker = null;
+    }
+  };
+  c.hub = new HubController({ core: c, secrets, webDir: path.join(__dirname, '..', 'web'), onState: keepAwake });
+  setBlobEnsurer((versionId) => (c.hubClient?.linked() ? c.hubClient.blobs : c.cloud!.blobs!).download(versionId));
   void secrets.get('pref.autoDownload').then((v) => (autoDownload = v !== '0'));
+  const hubMode = getState(c.db, 'mode') === 'hub';
+  void c.hubClient
+    .init()
+    .then(() => {
+      if (c.hubClient?.linked()) c.hubClient.startLoop(60_000);
+    })
+    .catch((e) => appendLog(paths, `hub client init: ${(e as Error).message}`));
+  void c.hub
+    .init()
+    .then(keepAwake)
+    .catch((e) => appendLog(paths, `hub server: ${(e as Error).message}`));
+  if (hubMode) return;
   void c.cloud
     .init()
     .then(() => {

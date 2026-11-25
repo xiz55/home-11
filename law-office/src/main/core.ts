@@ -17,6 +17,8 @@ import { REGISTRY, type MethodName } from './ipc/registry';
 import { zodFieldErrors } from '../shared/schemas';
 import { ZodError } from 'zod';
 import type { CloudService } from '../sync/cloudService';
+import type { HubClient } from '../sync/hubClient';
+import type { HubController } from '../hub/controller';
 
 export interface Session {
   userId: string;
@@ -53,6 +55,10 @@ export class AppCore {
   extraction: ExtractionQueue;
   /** خدمة الحساب السحابي والمزامنة (اختيارية؛ تُضبط من العملية الرئيسية) */
   cloud: CloudService | null = null;
+  /** هذا الجهاز «خادم المكتب» (جهاز المكتب الدائم) */
+  hub: HubController | null = null;
+  /** هذا الجهاز مرتبط بخادم المكتب (الماك) */
+  hubClient: HubClient | null = null;
   onLocked?: (sessionKey: string) => void;
   private noExtraction = false;
 
@@ -148,6 +154,7 @@ export class AppCore {
       const data = await def.handler(ctx, parsed.data as never, this);
       // أي تعديل محلي يُجدول مزامنة قريبة (الطابور الدائم يحفظه حتى لو لم يتوفر اتصال)
       if (this.cloud && !def.passive && !channel.startsWith('cloud.')) this.cloud.localChanged();
+      if (this.hubClient && !def.passive && !channel.startsWith('hub.')) this.hubClient.localChanged();
       return { ok: true, data };
     } catch (e) {
       if (e instanceof AppError) return { ok: false, error: { code: e.code, message: e.message, fields: e.fields, extra: e.extra } };
