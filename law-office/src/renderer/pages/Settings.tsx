@@ -4,7 +4,7 @@ import { FolderOpen, HardDriveDownload, HardDriveUpload, KeyRound, Plus, ShieldC
 import { Alert, Badge, Button, Card, Checkbox, Collapsible, DataTable, ErrorBox, KV, Loading, Modal, StatusBadge, Tabs, TextArea, TextInput, confirmAsync, toast, Ltr } from '../components/ui';
 import { ApiError, api, invalidate } from '../lib/api';
 import { useApi, useForm } from '../lib/hooks';
-import { useSession } from '../lib/session';
+import { useSession, useOs } from '../lib/session';
 import { When } from '../lib/display';
 import { LOOKUP_LISTS, LOOKUP_LIST_KEYS, PERMISSIONS, ROLES, type LookupListKey, type Permission } from '../../shared/constants';
 import { fmtDateTime } from '../../shared/dates';
@@ -205,6 +205,7 @@ function ListsTab() {
 }
 
 function RemindersTab() {
+  const os = useOs();
   const q = useApi(() => api('settings.get', {}), []);
   const [v, setV] = useState<{ idle: string; r24: boolean; r30: boolean; custom: string; taskTime: string; enabled: boolean; backupDays: string } | null>(null);
   useEffect(() => {
@@ -253,7 +254,7 @@ function RemindersTab() {
           <Checkbox label="قبل الجلسة بـ 30 دقيقة" checked={v.r30} onChange={(x) => setV({ ...v, r30: x })} />
           <TextInput label="مدد إضافية بالدقائق (اختياري)" ltr value={v.custom} onChange={(x) => setV({ ...v, custom: x })} placeholder="مثال: 120" />
           <TextInput label="وقت تذكير المهام في يوم الاستحقاق" type="time" ltr value={v.taskTime} onChange={(x) => setV({ ...v, taskTime: x })} />
-          <Alert tone="neutral">التنبيهات تظهر كإشعارات ويندوز أثناء تشغيل البرنامج فقط، وتتطلب السماح بإشعارات البرنامج في إعدادات ويندوز. لا توجد رسائل واتساب أو اتصالات أو تنبيهات بعد إغلاق البرنامج كليًا. ما يفوت يُعرض عند الفتح التالي.</Alert>
+          <Alert tone="neutral">التنبيهات تظهر ك{os.notifications} أثناء تشغيل البرنامج فقط، وتتطلب السماح بإشعارات البرنامج في إعدادات {os.mac ? 'النظام (الإشعارات)' : 'ويندوز'}. لا توجد رسائل واتساب أو اتصالات أو تنبيهات بعد إغلاق البرنامج كليًا. ما يفوت يُعرض عند الفتح التالي.</Alert>
         </div>
       </Card>
       <Card title="تذكير النسخ الاحتياطي">
@@ -273,6 +274,7 @@ function StorageTab() {
   const [restore, setRestore] = useState<Extract<MethodOutput<'backup.inspectRestore'>, { ok: true }> | null>(null);
   const [verify, setVerify] = useState<MethodOutput<'system.verifyAttachments'> | null>(null);
   const { refresh } = useSession();
+  const os = useOs();
   const doBackup = async (kind: 'backup.create' | 'backup.export') => {
     setBusy(kind);
     try {
@@ -301,7 +303,7 @@ function StorageTab() {
           />
         )}
         <div style={{ marginTop: 12 }}>
-          <Alert tone="warning">لا تنقل أو تعدّل الملفات داخل مجلد البيانات يدويًا. البيانات غير مشفرة على القرص؛ احمِ الجهاز بكلمة مرور ويندوز وتشفير القرص (BitLocker) إن أمكن.</Alert>
+          <Alert tone="warning">لا تنقل أو تعدّل الملفات داخل مجلد البيانات يدويًا. البيانات غير مشفرة على القرص؛ احمِ الجهاز ب{os.diskEncryption} إن أمكن.</Alert>
         </div>
         <Collapsible title="تفاصيل تقنية">
           {info.data && (

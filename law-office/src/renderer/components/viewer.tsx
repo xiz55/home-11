@@ -134,7 +134,7 @@ function BinaryPreview({ versionId, ext }: { versionId: string; ext: string }) {
   if (kind === 'image-external')
     return (
       <div className="card-pad">
-        <Alert tone="neutral">هذا النوع من الصور ({extLabel(ext)}) لا يُعرض داخل البرنامج. افتحه بالبرنامج الافتراضي في ويندوز.</Alert>
+        <Alert tone="neutral">هذا النوع من الصور ({extLabel(ext)}) لا يُعرض داخل البرنامج. افتحه بزر «فتح» بالبرنامج الافتراضي في نظام التشغيل، أو أظهره في مجلده.</Alert>
       </div>
     );
   if (q.loading && !q.data) return <Loading />;

@@ -44,6 +44,33 @@ nsis:
   installerLanguages:
     - ar_SA
   language: "1025"
+mac:
+  icon: resources/icon.png
+  category: public.app-category.business
+  darkModeSupport: false
+  # لا توجد شهادة مطور من Apple في بيئة البناء: توقيع محلي (ad-hoc) فقط ليعمل على Apple Silicon. ليس توقيعًا موثّقًا من Apple.
+  identity: "-"
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  notarize: false
+  target:
+    - target: dmg
+  artifactName: "LawOfficeManager-${version}-mac-${arch}.${ext}"
+  extendInfo:
+    CFBundleDisplayName: "إدارة مكتب المحاماة"
+    CFBundleDevelopmentRegion: ar
+    CFBundleLocalizations: [ar]
+    NSHumanReadableCopyright: "Law Office Manager — بيانات محلية على هذا الجهاز"
+dmg:
+  title: "إدارة مكتب المحاماة"
+  artifactName: "LawOfficeManager-${version}-mac-${arch}.${ext}"
+  contents:
+    - x: 140
+      y: 180
+    - x: 400
+      y: 180
+      type: link
+      path: /Applications
 linux:
   executableName: law-office-manager
   icon: resources/icon.png

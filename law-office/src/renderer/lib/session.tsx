@@ -66,6 +66,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
+/** اسم نظام التشغيل وما يرتبط به في النصوص المعروضة. */
+export function useOs() {
+  const { state } = useSession();
+  const mac = (state as { platform?: string } | null)?.platform === 'darwin';
+  return {
+    mac,
+    name: mac ? 'ماك' : 'ويندوز',
+    notifications: mac ? 'إشعارات macOS' : 'إشعارات ويندوز',
+    diskEncryption: mac ? 'كلمة مرور الماك وتشفير القرص (FileVault)' : 'كلمة مرور ويندوز وتشفير القرص (BitLocker)',
+    folder: mac ? 'Finder' : 'مجلده',
+  };
+}
+
 export function useSession(): SessionCtx {
   const c = useContext(Ctx);
   if (!c) throw new Error('SessionProvider missing');

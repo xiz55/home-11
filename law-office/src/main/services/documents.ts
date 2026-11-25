@@ -709,7 +709,7 @@ function workingCopy(ctx: Ctx, v: { file: string; original_name: string; version
   return target;
 }
 
-/** يفتح نسخة اطلاع من المستند بالبرنامج الافتراضي في ويندوز؛ الأصل المؤرشف لا يُفتح للتعديل. */
+/** يفتح نسخة اطلاع من المستند بالبرنامج الافتراضي في نظام التشغيل (ويندوز أو ماك)؛ الأصل المؤرشف لا يُفتح للتعديل. */
 export async function openVersion(ctx: Ctx, input: { versionId: string }) {
   requireUser(ctx);
   const v = versionRow(ctx, input.versionId);
@@ -717,10 +717,15 @@ export async function openVersion(ctx: Ctx, input: { versionId: string }) {
   const err = await ctx.platform.openPath(target);
   if (err) {
     const kind = ALLOWED_EXTENSIONS[v.ext].kind;
+    const mac = process.platform === 'darwin';
     const hint =
       kind === 'docx' || kind === 'doc'
-        ? 'لا يوجد برنامج مثبت لفتح ملفات Word على هذا الجهاز. ثبّت Microsoft Word أو بديلًا متوافقًا (مثل LibreOffice)، أو اعرض الملف في مجلده.'
-        : 'لا يوجد برنامج افتراضي لفتح هذا النوع من الملفات على هذا الجهاز. يمكنك إظهار الملف في مجلده وفتحه يدويًا.';
+        ? mac
+          ? 'لا يوجد برنامج مثبت على هذا الماك يفتح ملفات Word. ثبّت Microsoft Word أو Pages أو LibreOffice، أو أظهر الملف في Finder.'
+          : 'لا يوجد برنامج مثبت لفتح ملفات Word على هذا الجهاز. ثبّت Microsoft Word أو بديلًا متوافقًا (مثل LibreOffice)، أو اعرض الملف في مجلده.'
+        : mac
+          ? 'لا يوجد برنامج على هذا الماك يفتح هذا النوع من الملفات. يمكنك إظهار الملف في Finder وفتحه يدويًا.'
+          : 'لا يوجد برنامج افتراضي لفتح هذا النوع من الملفات على هذا الجهاز. يمكنك إظهار الملف في مجلده وفتحه يدويًا.';
     return { opened: false, message: hint, detail: err };
   }
   logActivity(ctx, { action: 'update', entityType: 'document_open', entityId: v.document_id, summary: `فتح نسخة اطلاع: ${v.original_name}` });

@@ -281,6 +281,79 @@ function createWindow() {
   void mainWindow.loadURL('app://local/index.html');
 }
 
+/** قائمة التطبيق: على ماك قائمة عربية قياسية باختصارات Command (نسخ/لصق/تكبير/إغلاق)، وعلى ويندوز لا شريط قوائم. */
+function buildAppMenu() {
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(null);
+    return;
+  }
+  const zoom = (d: number | null) => {
+    const wc = BrowserWindow.getFocusedWindow()?.webContents;
+    if (!wc) return;
+    wc.setZoomLevel(d === null ? 0 : Math.max(-2, Math.min(3, wc.getZoomLevel() + d)));
+  };
+  const name = 'إدارة مكتب المحاماة';
+  const template: MenuItemConstructorOptions[] = [
+    {
+      label: name,
+      submenu: [
+        { role: 'about', label: `حول ${name}` },
+        { type: 'separator' },
+        { role: 'hide', label: `إخفاء ${name}` },
+        { role: 'hideOthers', label: 'إخفاء الآخرين' },
+        { role: 'unhide', label: 'إظهار الكل' },
+        { type: 'separator' },
+        { role: 'quit', label: `إنهاء ${name}` },
+      ],
+    },
+    {
+      label: 'تحرير',
+      submenu: [
+        { role: 'undo', label: 'تراجع' },
+        { role: 'redo', label: 'إعادة' },
+        { type: 'separator' },
+        { role: 'cut', label: 'قص' },
+        { role: 'copy', label: 'نسخ' },
+        { role: 'paste', label: 'لصق' },
+        { role: 'selectAll', label: 'تحديد الكل' },
+      ],
+    },
+    {
+      label: 'عرض',
+      submenu: [
+        { label: 'تكبير', accelerator: 'Command+=', click: () => zoom(0.5) },
+        { label: 'تصغير', accelerator: 'Command+-', click: () => zoom(-0.5) },
+        { label: 'الحجم الافتراضي', accelerator: 'Command+0', click: () => zoom(null) },
+        { type: 'separator' },
+        { role: 'togglefullscreen', label: 'ملء الشاشة' },
+      ],
+    },
+    {
+      label: 'نافذة',
+      submenu: [
+        { role: 'minimize', label: 'تصغير إلى Dock' },
+        { role: 'zoom', label: 'تكبير النافذة' },
+        { role: 'close', label: 'إغلاق النافذة' },
+        { type: 'separator' },
+        { role: 'front', label: 'إحضار الكل للأمام' },
+      ],
+    },
+    {
+      label: 'مساعدة',
+      submenu: [
+        {
+          label: 'دليل الاستخدام',
+          click: () => {
+            const f = path.join(app.isPackaged ? path.join(process.resourcesPath, 'docs') : path.join(__dirname, '..', '..', 'docs'), 'دليل-الاستخدام.html');
+            if (fs.existsSync(f)) void shell.openPath(f);
+          },
+        },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 function registerIpc() {
   for (const name of Object.keys(REGISTRY)) {
     ipcMain.handle(`api:${name}`, async (event, payload) => {
@@ -343,7 +416,7 @@ app.whenReady().then(() => {
     app.exit(0);
     return;
   }
-  Menu.setApplicationMenu(null);
+  buildAppMenu();
   setRuntime({
     appVersion: app.getVersion(),
     execPath: process.execPath,
@@ -381,7 +454,13 @@ app.on('web-contents-created', (_e, wc) => {
 });
 
 app.on('window-all-closed', () => {
-  app.quit();
+  // على ماك يبقى التطبيق في شريط Dock كالمعتاد بعد إغلاق النافذة، ويُغلق بـ Command+Q
+  if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('activate', () => {
+  if (core && !mainWindow) createWindow();
+  else mainWindow?.show();
 });
 
 app.on('before-quit', () => {

@@ -1,0 +1,100 @@
+# بناء برنامج إدارة مكتب المحاماة لماك (Apple Silicon وIntel) واختباره فعليًا على أجهزة ماك آلية، ثم رفع ملفات DMG.
+name: law-office-macos
+
+on:
+  push:
+    branches: [claude/law-office-management-app-fzfje8]
+    paths: ['law-office/**', '.github/workflows/law-office-macos.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+            appdir: mac-arm64
+          - arch: x64
+            runner: macos-15-intel
+            appdir: mac
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: law-office
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: law-office/package-lock.json
+      - name: Machine
+        run: sw_vers && uname -m && sysctl -n machdep.cpu.brand_string
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: node scripts/build.mjs
+      - name: Unit and integration tests (macOS)
+        run: npx vitest run
+      - name: Package macOS app and DMG
+        run: npx electron-builder --mac dmg --${{ matrix.arch }} --publish never
+      - name: Inspect the packaged app (architecture, signature, Gatekeeper)
+        run: |
+          APP="release/${{ matrix.appdir }}/LawOfficeManager.app"
+          ls -la release
+          file "$APP/Contents/MacOS/LawOfficeManager"
+          lipo -archs "$APP/Contents/MacOS/LawOfficeManager"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' -c 'Print :CFBundleIdentifier' -c 'Print :LSMinimumSystemVersion' "$APP/Contents/Info.plist"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dv "$APP" 2>&1 | grep -E 'Signature|Identifier|TeamIdentifier'
+          # موقّع محليًا (ad-hoc) فقط — غير موثّق من Apple؛ التقييم التالي متوقع أن يرفض ويُعرض للتوثيق فقط
+          spctl --assess --type execute --verbose "$APP" || echo "Gatekeeper: not notarized (expected without an Apple Developer ID)"
+          shasum -a 256 release/*.dmg
+      - name: End-to-end journeys on the packaged macOS app
+        run: |
+          export LAWOFFICE_EXEC="$PWD/release/${{ matrix.appdir }}/LawOfficeManager.app/Contents/MacOS/LawOfficeManager"
+          export LAWOFFICE_MCP_SCRIPT="$PWD/release/${{ matrix.appdir }}/LawOfficeManager.app/Contents/Resources/app.asar.unpacked/dist/mcp/server.js"
+          node --test --test-reporter=spec tests/e2e/journey.e2e.mjs tests/e2e/appointments.e2e.mjs
+      - name: Install from the DMG into ~/Applications, launch and verify
+        run: |
+          DMG=$(ls release/*.dmg | head -1)
+          hdiutil verify "$DMG"
+          MNT=$(mktemp -d)
+          hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MNT"
+          ls -la "$MNT"
+          test -L "$MNT/Applications"
+          mkdir -p "$HOME/Applications"
+          ditto "$MNT/LawOfficeManager.app" "$HOME/Applications/LawOfficeManager.app"
+          hdiutil detach "$MNT"
+          export LAWOFFICE_EXEC="$HOME/Applications/LawOfficeManager.app/Contents/MacOS/LawOfficeManager"
+          export LAWOFFICE_MCP_SCRIPT="$HOME/Applications/LawOfficeManager.app/Contents/Resources/app.asar.unpacked/dist/mcp/server.js"
+          node tests/e2e/installed-smoke.mjs
+          node tests/e2e/mac-installed.mjs
+          # تشغيل التطبيق المثبت كما يفعل المستخدم (open) والتحقق أنه يعمل ثم إغلاقه بأمر الإنهاء
+          open "$HOME/Applications/LawOfficeManager.app"
+          for i in $(seq 1 30); do pgrep -f "Applications/LawOfficeManager.app/Contents/MacOS/LawOfficeManager" && break; sleep 1; done
+          pgrep -f "Applications/LawOfficeManager.app/Contents/MacOS/LawOfficeManager"
+          sleep 5
+          osascript -e 'tell application "LawOfficeManager" to quit' || pkill -f "Applications/LawOfficeManager.app/Contents/MacOS/LawOfficeManager"
+          sleep 3
+          ls -la "$HOME/Library/Application Support/LawOfficeManager/data"
+      - name: Upload test screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results-macos-${{ matrix.arch }}
+          path: law-office/test-results/e2e/*.png
+          if-no-files-found: ignore
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: LawOfficeManager-mac-${{ matrix.arch }}-dmg
+          path: law-office/release/*.dmg

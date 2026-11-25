@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, CalendarCheck, MessagesSquare, Users, Gavel 
 import { Alert, Badge, Button, Card, DataTable, Empty, ErrorBox, Loading, StatusBadge, Ltr } from '../components/ui';
 import { api } from '../lib/api';
 import { useApi } from '../lib/hooks';
-import { useSession } from '../lib/session';
+import { useSession, useOs } from '../lib/session';
 import { EVENT_KIND, TimeOf, When, eventPath } from '../lib/display';
 import { addDays, fmtDateLong, monthName, todayRiyadh, weekdayOf, pad } from '../../shared/dates';
 import { HEARING_STATUSES, TASK_STATUSES, DEADLINE_STATUSES, CONSULT_STATUSES, MEETING_STATUSES } from '../../shared/constants';
@@ -47,6 +47,7 @@ export function CalendarView({ only, embedded }: { only?: ('consultation' | 'mee
   const [caseId, setCaseId] = useState('');
   const [resp, setResp] = useState('');
   const { users } = useSession();
+  const os = useOs();
   const clients = useApi(() => api('clients.options', {}), []);
   const cases = useApi(() => api('cases.options', { clientId: clientId || null }), [clientId]);
   const navigate = useNavigate();
@@ -224,7 +225,7 @@ export function CalendarView({ only, embedded }: { only?: ('consultation' | 'mee
               </ul>
             )}
             <div style={{ marginTop: 12 }}>
-              <Alert tone="neutral">تنبيهات ويندوز تصل فقط أثناء تشغيل البرنامج وبإذن الإشعارات في النظام. ما يفوت أثناء الإغلاق يُعرض عند الفتح التالي.</Alert>
+              <Alert tone="neutral">{os.notifications} تصل فقط أثناء تشغيل البرنامج وبإذن الإشعارات في النظام. ما يفوت أثناء الإغلاق يُعرض عند الفتح التالي.</Alert>
             </div>
           </Card>
         </div>

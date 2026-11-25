@@ -3,7 +3,7 @@ import { Eye, EyeOff, KeyRound, Lock, LogIn, Scale } from 'lucide-react';
 import { Alert, Button, TextInput, Field } from '../components/ui';
 import { ApiError, api } from '../lib/api';
 import { useForm } from '../lib/hooks';
-import { useSession } from '../lib/session';
+import { useSession, useOs } from '../lib/session';
 import { DEFAULT_OFFICE_NAME } from '../../shared/constants';
 
 function PasswordInput({ label, value, onChange, error, autoFocus, name, hint }: { label: string; value: string; onChange: (v: string) => void; error?: string; autoFocus?: boolean; name?: string; hint?: string }) {
@@ -58,6 +58,7 @@ export function RecoveryCodeNotice({ code, onDone }: { code: string; onDone: () 
 
 export function SetupScreen() {
   const { refresh } = useSession();
+  const os = useOs();
   const f = useForm({ officeName: DEFAULT_OFFICE_NAME, displayName: '', username: '', password: '', confirm: '' });
   const [busy, setBusy] = useState(false);
   const [code, setCode] = useState<string | null>(null);
@@ -98,7 +99,7 @@ export function SetupScreen() {
           <Button type="submit" variant="primary" loading={busy} icon={<KeyRound />}>
             إنشاء الحساب
           </Button>
-          <div className="help">تسجيل الدخول يحمي الوصول عبر البرنامج، لكنه لا يشفّر الملفات على القرص. احمِ جهازك بكلمة مرور ويندوز وتشفير القرص (BitLocker) إن أمكن.</div>
+          <div className="help">تسجيل الدخول يحمي الوصول عبر البرنامج، لكنه لا يشفّر الملفات على القرص. احمِ جهازك ب{os.diskEncryption} إن أمكن.</div>
         </div>
       </form>
     </div>

@@ -74,6 +74,7 @@ export const REGISTRY = {
         locked: !!(s && user && s.locked),
         idleMinutes: settings.readSetting(ctx.db, 'security.idleLockMinutes'),
         appVersion: runtime.appVersion,
+        platform: runtime.platform,
         customDataDir: runtime.customDataDir ? ctx.paths.dataDir : null,
       };
     },
