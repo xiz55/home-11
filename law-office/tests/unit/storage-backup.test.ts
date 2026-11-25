@@ -128,6 +128,8 @@ describe('النسخ الاحتياطي والاستعادة', () => {
   });
 
   it('ينشئ حزمة متسقة تشمل بيانات WAL والمرفقات والبيان', async () => {
+    // استخراج النص يعمل في الخلفية: ننتظر اكتماله حتى تطابق الحزمةُ الأصلَ (كان يتسابق على الأجهزة البطيئة)
+    await A.core.extraction.idle();
     backupFile = path.join(out, 'office-backup');
     A.platform.saveQueue.push(backupFile);
     const r = await call(A.core, S, 'backup.create', {});
