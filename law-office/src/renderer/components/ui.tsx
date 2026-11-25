@@ -486,7 +486,7 @@ export function DataTable<T>({ rows, columns, rowKey, onRowClick, empty = 'لا 
                   onKeyDown={onRowClick ? (e) => e.key === 'Enter' && onRowClick(r) : undefined}
                 >
                   {columns.map((c) => (
-                    <td key={c.key} className={c.className}>
+                    <td key={c.key} className={c.className} data-label={typeof c.header === 'string' ? c.header : undefined}>
                       {c.render ? c.render(r) : String(c.sortValue?.(r) ?? '')}
                     </td>
                   ))}

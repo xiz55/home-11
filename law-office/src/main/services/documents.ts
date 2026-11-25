@@ -668,6 +668,11 @@ let blobEnsurer: ((versionId: string) => Promise<void>) | null = null;
 export function setBlobEnsurer(fn: ((versionId: string) => Promise<void>) | null) {
   blobEnsurer = fn;
 }
+/** الآيفون: تحميل محتوى ملف المرفق من مخزن الجهاز إلى الذاكرة قبل قراءته (سطح المكتب لا يحتاجه). */
+let fileLoader: ((file: string) => Promise<void>) | null = null;
+export function setFileLoader(fn: ((file: string) => Promise<void>) | null) {
+  fileLoader = fn;
+}
 async function ensureLocal(ctx: Ctx, versionId: string) {
   const v = ctx.db.get<{ document_id: string; stored_name: string }>('SELECT document_id, stored_name FROM document_versions WHERE id = ?', [versionId]);
   if (!v) throw notFound('نسخة المستند');
@@ -679,6 +684,7 @@ async function ensureLocal(ctx: Ctx, versionId: string) {
       throw new AppError('STORAGE', `تعذر تنزيل الملف الآن: ${(e as Error).message}`);
     }
   }
+  if (fileLoader) await fileLoader(attachmentPath(ctx.paths, v.stored_name));
 }
 
 function versionRow(ctx: Ctx, versionId: string) {

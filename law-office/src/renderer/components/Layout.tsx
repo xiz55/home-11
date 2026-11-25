@@ -28,6 +28,7 @@ import {
   Banknote,
   ClipboardPlus,
   MessagesSquare,
+  Menu,
 } from 'lucide-react';
 import { Button, Dropdown, Modal, Select, toast, Ltr } from './ui';
 import { api, invalidate } from '../lib/api';
@@ -202,14 +203,16 @@ export function Layout() {
     if (location.pathname !== '/search') setQ('');
   }, [location.pathname]);
 
+  const [navOpen, setNavOpen] = useState(false);
   const logout = async () => {
     await api('auth.logout', {}).catch(() => undefined);
     await refresh();
   };
 
   return (
-    <div className="app">
-      <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`} aria-label="القائمة الرئيسية">
+    <div className={`app ${navOpen ? 'nav-open' : ''}`}>
+      <div className="nav-scrim" onClick={() => setNavOpen(false)} aria-hidden />
+      <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`} aria-label="القائمة الرئيسية" onClick={(e) => (e.target as HTMLElement).closest('a') && setNavOpen(false)}>
         <div className="brand">
           <div className="mark" aria-hidden>
             <Scale size={22} />
@@ -231,6 +234,9 @@ export function Layout() {
       </aside>
       <div className="main">
         <header className="topbar">
+          <button className="nav-toggle" onClick={() => setNavOpen((o) => !o)} aria-label="القائمة" aria-expanded={navOpen}>
+            <Menu size={22} />
+          </button>
           <form
             className="search"
             role="search"

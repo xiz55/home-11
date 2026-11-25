@@ -54,12 +54,13 @@ export class AppCore {
   /** خدمة الحساب السحابي والمزامنة (اختيارية؛ تُضبط من العملية الرئيسية) */
   cloud: CloudService | null = null;
   onLocked?: (sessionKey: string) => void;
+  private noExtraction = false;
 
   constructor(
     dataDir: string,
     public platform: Platform = nullPlatform,
     public now: () => Date = () => new Date(),
-    opts: { extractWorkerFile?: string | null; inlineExtractor?: ConstructorParameters<typeof ExtractionQueue>[3] } = {},
+    opts: { extractWorkerFile?: string | null; inlineExtractor?: ConstructorParameters<typeof ExtractionQueue>[3]; noExtraction?: boolean } = {},
   ) {
     this.paths = buildPaths(dataDir);
     ensureDirs(this.paths);
@@ -72,7 +73,9 @@ export class AppCore {
       /* نسخة اطلاع مفتوحة في برنامج آخر */
     }
     this.extraction = new ExtractionQueue(() => this.db, this.paths, opts.extractWorkerFile ?? null, opts.inlineExtractor);
-    setVersionAddedHook((vid) => this.extraction.enqueue(vid));
+    // الآيفون: لا استخراج نصوص محليًا؛ تبقى النسخ «بانتظار الاستخراج» ويستخرجها جهاز سطح المكتب بعد المزامنة
+    this.noExtraction = !!opts.noExtraction;
+    setVersionAddedHook((vid) => (this.noExtraction ? undefined : this.extraction.enqueue(vid)));
   }
 
   openDb(): Db {
@@ -96,7 +99,7 @@ export class AppCore {
     const ctx = this.systemCtx();
     markMissed(ctx);
     autoSnapshot(this.db, this.paths, this.now());
-    this.extraction.enqueuePending();
+    if (!this.noExtraction) this.extraction.enqueuePending();
   }
 
   systemCtx(): Ctx {

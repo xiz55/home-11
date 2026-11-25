@@ -443,8 +443,13 @@ export const REGISTRY = {
     const c = requireCloud(core);
     const u = ctx.user!;
     // نسخة احتياطية كاملة متسقة (قاعدة + مرفقات) قبل أي نقل — تبقى على هذا الجهاز
-    const backupFile = path.join(ctx.paths.autoBackupsDir, `قبل-النقل-السحابي-${ctx.now().toISOString().replace(/[:.]/g, '-')}.lobk`);
-    await backup.writePackage(ctx.db, ctx.paths, backupFile, { appVersion: runtime.appVersion, createdBy: u.username, now: ctx.now() });
+    // الآيفون: لقطة قاعدة كاملة متسقة (المرفقات تبقى في مكانها دون حذف)؛ سطح المكتب: حزمة كاملة بالمرفقات
+    const mobile = (runtime.platform as string) === 'ios';
+    const backupFile = path.join(ctx.paths.autoBackupsDir, `قبل-النقل-السحابي-${ctx.now().toISOString().replace(/[:.]/g, '-')}.${mobile ? 'sqlite' : 'lobk'}`);
+    if (mobile) {
+      fs.mkdirSync(ctx.paths.autoBackupsDir, { recursive: true });
+      ctx.db.raw.prepare('VACUUM INTO ?').run(backupFile);
+    } else await backup.writePackage(ctx.db, ctx.paths, backupFile, { appVersion: runtime.appVersion, createdBy: u.username, now: ctx.now() });
     try {
       return { ...(await c.createOffice({ officeName: settings.readSetting(ctx.db, 'office.name'), localOwnerId: u.id, displayName: u.displayName })), backupFile };
     } catch (e) {

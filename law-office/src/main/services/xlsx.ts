@@ -1,6 +1,6 @@
 // كاتب XLSX محلي بسيط (Office Open XML) دون مكتبات خارجية: نص مضمّن، أرقام بقيمها الدقيقة، اتجاه ورقة من اليمين لليسار،
 // صف عناوين مثبت ومكرر عند الطباعة. المبالغ تُكتب من الهللات بحساب صحيح دون كسور عائمة.
-import yazl from 'yazl';
+import { zipSync, strToU8 } from 'fflate';
 
 export type XCell = { t: 's'; v: string } | { t: 'n'; v: number; money?: boolean } | { t: 'money'; halalas: number } | null;
 
@@ -104,8 +104,9 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 export function buildXlsx(sheets: XSheet[], meta: { title: string; createdAt: string }): Promise<Buffer> {
   const used = new Set<string>();
   const named = sheets.map((s) => ({ ...s, name: safeSheetName(s.name, used) }));
-  const zip = new yazl.ZipFile();
-  const add = (name: string, content: string) => zip.addBuffer(Buffer.from(content, 'utf8'), name, { mtime: new Date(meta.createdAt) });
+  // ضغط ZIP بمكتبة fflate (تعمل على سطح المكتب والآيفون بالنتيجة نفسها)
+  const entries: Record<string, [Uint8Array, { mtime: Date }]> = {};
+  const add = (name: string, content: string) => (entries[name] = [strToU8(content), { mtime: new Date(meta.createdAt) }]);
   add(
     '[Content_Types].xml',
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -160,11 +161,6 @@ ${named.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openx
   );
   add('xl/styles.xml', STYLES);
   sheetXmls.forEach((x, i) => add(`xl/worksheets/sheet${i + 1}.xml`, x));
-  zip.end();
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    zip.outputStream.on('data', (c: Buffer) => chunks.push(c));
-    zip.outputStream.on('error', reject);
-    zip.outputStream.on('end', () => resolve(Buffer.concat(chunks)));
-  });
+  const out = zipSync(entries, { level: 6 });
+  return Promise.resolve(Buffer.from(out.buffer, out.byteOffset, out.byteLength));
 }

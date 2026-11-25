@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { isIOS } from '../lib/platform';
 import { AlertTriangle, Briefcase, CalendarClock, HardDriveDownload, ListTodo, Wallet } from 'lucide-react';
 import { Alert, Badge, Button, Card, Empty, ErrorBox, Loading, StatusBadge, Ltr } from '../components/ui';
 import { api } from '../lib/api';
@@ -25,7 +26,7 @@ export function DashboardPage() {
           <div className="sub">{fmtDateLong(d.today)} — بتوقيت الرياض</div>
         </div>
       </div>
-      {d.backup?.due && (
+      {d.backup?.due && !isIOS() && (
         <Alert tone="warning">
           <div className="row between wrap">
             <span>{d.backup.lastBackupAt ? `مضى أكثر من ${d.backup.reminderDays} أيام على آخر نسخة احتياطية (${fmtDate(d.backup.lastBackupAt.slice(0, 10))}).` : 'لم تُنشأ أي نسخة احتياطية بعد.'} احفظ نسخة على قرص خارجي.</span>

@@ -1,0 +1,14 @@
+{
+  "appId": "sa.lawoffice.shahrani",
+  "appName": "مكتب المحاماة",
+  "webDir": "dist/mobile",
+  "ios": {
+    "contentInset": "never",
+    "scheme": "LawOffice",
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "server": {
+    "iosScheme": "capacitor"
+  },
+  "plugins": {}
+}

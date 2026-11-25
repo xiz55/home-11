@@ -6,6 +6,7 @@ import { ApiError, api, invalidate } from '../lib/api';
 import { useApi, useForm } from '../lib/hooks';
 import { useSession, useOs } from '../lib/session';
 import { CloudTab } from './Cloud';
+import { isIOS } from '../lib/platform';
 import { When } from '../lib/display';
 import { LOOKUP_LISTS, LOOKUP_LIST_KEYS, PERMISSIONS, ROLES, type LookupListKey, type Permission } from '../../shared/constants';
 import { fmtDateTime } from '../../shared/dates';
@@ -38,9 +39,9 @@ export function SettingsPage() {
           { key: 'users', label: 'المستخدمون والصلاحيات', hidden: !isOwner },
           { key: 'lists', label: 'القوائم الافتراضية', hidden: !isOwner },
           { key: 'reminders', label: 'التنبيهات والأمان', hidden: !isOwner },
-          { key: 'storage', label: 'مكان الحفظ والنسخ الاحتياطي', hidden: !isOwner },
+          { key: 'storage', label: 'مكان الحفظ والنسخ الاحتياطي', hidden: !isOwner || isIOS() },
           { key: 'cloud', label: 'الحساب السحابي والمزامنة', hidden: !isOwner && !cloudLinked },
-          { key: 'integration', label: 'الربط بأدوات الذكاء الاصطناعي', hidden: !isOwner },
+          { key: 'integration', label: 'الربط بأدوات الذكاء الاصطناعي', hidden: !isOwner || isIOS() },
           { key: 'activity', label: 'سجل الأنشطة', hidden: !isOwner },
           { key: 'account', label: 'حسابي' },
         ]}

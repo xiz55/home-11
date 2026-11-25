@@ -1,0 +1,12 @@
+{
+  "name": "law-native",
+  "version": "1.0.0",
+  "private": true,
+  "description": "إضافات أصلية لنسخة الآيفون: Keychain للأسرار، والطباعة وتحويل HTML إلى PDF",
+  "main": "index.js",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  }
+}
