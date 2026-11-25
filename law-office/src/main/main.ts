@@ -287,8 +287,9 @@ function buildAppMenu() {
     Menu.setApplicationMenu(null);
     return;
   }
-  const zoom = (d: number | null) => {
-    const wc = BrowserWindow.getFocusedWindow()?.webContents;
+  const zoom = (d: number | null, w?: Electron.BaseWindow) => {
+    const target = (w instanceof BrowserWindow ? w : null) ?? BrowserWindow.getFocusedWindow() ?? mainWindow;
+    const wc = target?.webContents;
     if (!wc) return;
     wc.setZoomLevel(d === null ? 0 : Math.max(-2, Math.min(3, wc.getZoomLevel() + d)));
   };
@@ -321,9 +322,9 @@ function buildAppMenu() {
     {
       label: 'عرض',
       submenu: [
-        { label: 'تكبير', accelerator: 'Command+=', click: () => zoom(0.5) },
-        { label: 'تصغير', accelerator: 'Command+-', click: () => zoom(-0.5) },
-        { label: 'الحجم الافتراضي', accelerator: 'Command+0', click: () => zoom(null) },
+        { label: 'تكبير', accelerator: 'Command+=', click: (_i, w) => zoom(0.5, w) },
+        { label: 'تصغير', accelerator: 'Command+-', click: (_i, w) => zoom(-0.5, w) },
+        { label: 'الحجم الافتراضي', accelerator: 'Command+0', click: (_i, w) => zoom(null, w) },
         { type: 'separator' },
         { role: 'togglefullscreen', label: 'ملء الشاشة' },
       ],

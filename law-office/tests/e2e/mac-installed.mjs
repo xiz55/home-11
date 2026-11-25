@@ -61,10 +61,26 @@ try {
   assert.ok(menu && menu.length >= 4, 'قائمة التطبيق موجودة');
   const flat = JSON.stringify(menu);
   for (const want of ['نسخ', 'لصق', 'تكبير', 'إنهاء']) assert.ok(flat.includes(want), `عنصر القائمة ${want}`);
-  await win.keyboard.press('Meta+Equal');
-  const z = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.getZoomLevel());
-  assert.ok(z > 0, 'Command+= يكبر العرض');
-  await win.keyboard.press('Meta+0');
+  // اختصار ⌘= يعالجه نظام ماك عبر عنصر القائمة نفسه؛ نُفعّل العنصر كما يفعل الاختصار الحقيقي
+  const clickMenu = (accel) =>
+    app.evaluate(({ Menu, BrowserWindow }, a) => {
+      const w = BrowserWindow.getAllWindows()[0];
+      w.focus();
+      const find = (items) => {
+        for (const i of items) {
+          if (i.accelerator === a) return i;
+          const sub = i.submenu && find(i.submenu.items);
+          if (sub) return sub;
+        }
+        return null;
+      };
+      const item = find(Menu.getApplicationMenu().items);
+      if (!item) return null;
+      item.click(undefined, w, w.webContents);
+      return w.webContents.getZoomLevel();
+    }, accel);
+  assert.ok((await clickMenu('Command+=')) > 0, 'Command+= يكبر العرض');
+  assert.equal(await clickMenu('Command+0'), 0, 'Command+0 يعيد الحجم الافتراضي');
 
   // إرفاق PDF وWord (يُنسخان إلى مستودع التطبيق) وفتحهما بالبرامج الافتراضية فعليًا
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lom-mac-files-'));
