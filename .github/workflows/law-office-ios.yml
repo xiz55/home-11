@@ -1,0 +1,87 @@
+# بناء مشروع الآيفون (Capacitor + Xcode) وتشغيله على محاكي iOS — دون توقيع (لا يوجد حساب Apple Developer بعد).
+# ملاحظة: بناء المحاكي لا يُثبَّت على جهاز iPhone فعلي؛ التثبيت على الجهاز يحتاج توقيعًا وتوزيعًا عبر TestFlight.
+name: law-office-ios
+
+on:
+  push:
+    branches: [claude/law-office-management-app-fzfje8]
+    paths: ['law-office/**', '.github/workflows/law-office-ios.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios-simulator:
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: law-office
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: law-office/package-lock.json
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Build web bundle and sync Xcode project
+        run: npm run build:mobile
+      - name: Xcode version
+        run: xcodebuild -version
+      - name: Build for iOS Simulator (unsigned)
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/sim CODE_SIGNING_ALLOWED=NO build | tail -n 30
+      - name: Compile for iPhone hardware (unsigned — compile check only, not installable)
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO build | tail -n 30
+      - name: Run on iOS Simulator
+        run: |
+          set -e
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
+          echo "simulator: $UDID"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          APP=build/sim/Build/Products/Debug-iphonesimulator/App.app
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl launch "$UDID" sa.lawoffice.shahrani
+          sleep 30
+          mkdir -p test-results/ios
+          xcrun simctl io "$UDID" screenshot test-results/ios/01-first-launch.png
+          DATA=$(xcrun simctl get_app_container "$UDID" sa.lawoffice.shahrani data)
+          DB="$DATA/Library/NoCloud/lawoffice/data/office.sqlite"
+          echo "database: $DB"
+          ls -la "$DATA/Library/NoCloud/lawoffice/data" || true
+          test -s "$DB"
+          # قاعدة البيانات التي أنشأها التطبيق داخل المحاكي: البنية مكتملة وسليمة
+          sqlite3 "$DB" "PRAGMA integrity_check; SELECT max(version) FROM schema_migrations; SELECT count(*) FROM sqlite_master WHERE type='table';" | tee test-results/ios/db-check.txt
+          grep -q '^ok$' test-results/ios/db-check.txt
+          # إعادة التشغيل: التطبيق يفتح القاعدة نفسها دون فقد
+          xcrun simctl terminate "$UDID" sa.lawoffice.shahrani
+          xcrun simctl launch "$UDID" sa.lawoffice.shahrani
+          sleep 20
+          xcrun simctl io "$UDID" screenshot test-results/ios/02-relaunch.png
+          sqlite3 "$DB" "PRAGMA integrity_check;" | grep -q '^ok$'
+      - name: Package simulator app
+        if: always()
+        run: |
+          mkdir -p out
+          if [ -d build/sim/Build/Products/Debug-iphonesimulator/App.app ]; then
+            ditto -c -k --keepParent build/sim/Build/Products/Debug-iphonesimulator/App.app out/LawOffice-iOS-Simulator-unsigned.zip
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: law-office-ios-simulator
+          path: |
+            law-office/test-results/ios
+            law-office/out/*.zip
+          if-no-files-found: warn

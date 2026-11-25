@@ -34,3 +34,21 @@ jobs:
         env:
           LAWSYNC_REQUIRE_PG: '1'
         run: npx vitest run
+      - name: Shared logic on the iPhone engine (sql.js/WebAssembly)
+        env:
+          LAWSYNC_REQUIRE_PG: '1'
+        run: npm run test:sqljs
+      - name: Build iPhone web bundle
+        run: node scripts/build-mobile.mjs
+      - name: Install Chromium for phone-size tests
+        run: npx playwright install --with-deps chromium
+      - name: iPhone build in phone-size browser (local data, layout, persistence)
+        run: node tests/mobile/smoke.mjs
+      - name: iPhone build cloud sync against local Supabase
+        run: node tests/mobile/cloud.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: law-office-mobile-web-screenshots
+          path: law-office/test-results/mobile
+          if-no-files-found: ignore
