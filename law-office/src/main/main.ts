@@ -11,6 +11,7 @@ import { setRuntime } from './runtime';
 import { takeDueReminders } from './services/reminders';
 import { loadReportFonts } from './services/reports';
 import { readSetting } from './services/settings';
+import { autoSnapshot } from './services/backup';
 import { CloudService, type SecretStore } from '../sync/cloudService';
 import { setBlobEnsurer } from './services/documents';
 import { attachmentPath } from './paths';
@@ -491,6 +492,12 @@ function startScheduler() {
     if (!core) return;
     // قفل الجلسات الخاملة وإبلاغ الواجهة
     for (const key of core.sessions.keys()) core.checkIdle(key);
+    // لقطة يومية لقاعدة البيانات حتى لو بقي البرنامج يعمل أيامًا (جهاز المكتب الدائم)؛ تُحتفظ آخر 7
+    try {
+      autoSnapshot(core.db, core.paths, new Date());
+    } catch (e) {
+      appendLog(paths, `daily snapshot: ${(e as Error).message}`);
+    }
     try {
       const due = takeDueReminders(core.systemCtx());
       if (due.length && Notification.isSupported()) {
