@@ -26,6 +26,7 @@ import {
 import { canAccessCase, clientAccess, grantClient, hasPerm, isOwner, requireCase, requireClient, requirePerm, requireUser } from './access';
 import { logActivity } from './activity';
 import { readSetting } from './settings';
+import { reservedNumber } from './numbering';
 import { clearReminders, syncTaskReminder } from './reminders';
 import { contractTotals } from './finance';
 import { findSimilarClients, nextClientNo } from './clients';
@@ -92,6 +93,8 @@ function requireManage(ctx: Ctx) {
 function nextRef(ctx: Ctx, prefix: 'CON' | 'MTG', table: ApptTable): string {
   const year = todayRiyadh(ctx.now()).slice(0, 4);
   const key = `${prefix.toLowerCase()}_no_${year}`;
+  const reserved = reservedNumber(ctx, key);
+  if (reserved !== null) return `${prefix}-${year}/${String(reserved).padStart(4, '0')}`;
   ctx.db.run('INSERT INTO counters (name, value) VALUES (?, 0) ON CONFLICT(name) DO NOTHING', [key]);
   for (;;) {
     ctx.db.run('UPDATE counters SET value = value + 1 WHERE name = ?', [key]);

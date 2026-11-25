@@ -738,6 +738,48 @@ CREATE UNIQUE INDEX idx_clients_no ON clients(client_no);
 INSERT INTO counters (name, value) SELECT 'client_no', count(*) FROM clients WHERE 1 ON CONFLICT(name) DO UPDATE SET value = excluded.value;
 `,
   },
+  {
+    version: 4,
+    name: 'cloud sync bookkeeping',
+    // جداول المزامنة محلية فقط (لا تُرفع). المشغلات تُثبَّت عند تفعيل المزامنة السحابية.
+    sql: `
+CREATE TABLE sync_state (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE sync_flags (id INTEGER PRIMARY KEY CHECK (id = 1), applying INTEGER NOT NULL DEFAULT 0);
+INSERT INTO sync_flags (id, applying) VALUES (1, 0);
+CREATE TABLE sync_outbox (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  tbl TEXT NOT NULL,
+  rid TEXT NOT NULL,
+  op TEXT NOT NULL CHECK (op IN ('upsert','delete')),
+  at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX idx_outbox_key ON sync_outbox(tbl, rid);
+-- دفعة أُرسلت ولم يصل ردها: تُعاد كما هي بنفس معرفات العمليات قبل أي دفعة جديدة
+CREATE TABLE sync_inflight (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL, max_seq INTEGER NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE sync_meta (tbl TEXT NOT NULL, rid TEXT NOT NULL, version INTEGER NOT NULL, base TEXT, PRIMARY KEY (tbl, rid));
+CREATE TABLE sync_conflicts (
+  id TEXT PRIMARY KEY,
+  tbl TEXT NOT NULL,
+  rid TEXT NOT NULL,
+  fields TEXT NOT NULL,
+  server_data TEXT NOT NULL,
+  client_data TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  resolved_at TEXT,
+  resolution TEXT
+);
+CREATE TABLE sync_rejected (id INTEGER PRIMARY KEY AUTOINCREMENT, tbl TEXT NOT NULL, rid TEXT NOT NULL, message TEXT, at TEXT NOT NULL);
+CREATE TABLE sync_blobs (
+  version_id TEXT PRIMARY KEY,
+  state TEXT NOT NULL CHECK (state IN ('pending_upload','uploading','uploaded','remote','downloading','local','failed')),
+  pinned INTEGER NOT NULL DEFAULT 0,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE number_blocks (name TEXT NOT NULL, next INTEGER NOT NULL, last INTEGER NOT NULL, PRIMARY KEY (name, next));
+`,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

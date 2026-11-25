@@ -56,9 +56,13 @@ interface StageInput {
   notes: string | null;
 }
 
+import { reservedNumber } from './numbering';
+
 function nextFileNo(ctx: Ctx): string {
   const year = todayRiyadh(ctx.now()).slice(0, 4);
   const key = `case_no_${year}`;
+  const reserved = reservedNumber(ctx, key);
+  if (reserved !== null) return `${year}/${String(reserved).padStart(4, '0')}`;
   ctx.db.run('INSERT INTO counters (name, value) VALUES (?, 0) ON CONFLICT(name) DO NOTHING', [key]);
   ctx.db.run('UPDATE counters SET value = value + 1 WHERE name = ?', [key]);
   let n = ctx.db.get<{ value: number }>('SELECT value FROM counters WHERE name = ?', [key])!.value;

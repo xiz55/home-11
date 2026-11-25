@@ -16,6 +16,7 @@ import {
   requireUser,
 } from './access';
 import { logActivity } from './activity';
+import { reservedNumber } from './numbering';
 import { currentStageOf, lastActionOf, nextEventOf } from './overview';
 import { clientFinanceSummary, listContracts, listPoas } from './finance';
 import { listDocuments } from './documents';
@@ -108,6 +109,8 @@ function params(input: ClientInput) {
 
 /** يعطي جهة الاتصال الجديدة رقمًا ثابتًا متسلسلًا. */
 export function nextClientNo(ctx: Ctx): string {
+  const reserved = reservedNumber(ctx, 'client_no');
+  if (reserved !== null) return String(reserved).padStart(5, '0');
   ctx.db.run("INSERT INTO counters (name, value) VALUES ('client_no', 0) ON CONFLICT(name) DO NOTHING");
   for (;;) {
     ctx.db.run("UPDATE counters SET value = value + 1 WHERE name = 'client_no'");

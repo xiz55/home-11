@@ -427,7 +427,9 @@ describe('ترحيل قاعدة قائمة إلى بنية الاستشارات 
     db.exec(`INSERT INTO documents SELECT * FROM documents_v2; DROP TABLE documents_v2; DROP TABLE service_txns; DROP TABLE contract_adjustments;
       ALTER TABLE tasks DROP COLUMN consultation_id; ALTER TABLE tasks DROP COLUMN meeting_id; DROP TABLE meetings; DROP TABLE consultations;
       ALTER TABLE fee_items DROP COLUMN item_kind; ALTER TABLE fee_items DROP COLUMN basis; DROP INDEX idx_clients_no; ALTER TABLE clients DROP COLUMN client_no;
-      DELETE FROM schema_migrations WHERE version = 3;`);
+      DELETE FROM schema_migrations WHERE version >= 3;
+      DROP TABLE sync_state; DROP TABLE sync_flags; DROP TABLE sync_outbox; DROP TABLE sync_inflight; DROP TABLE sync_meta; DROP TABLE sync_conflicts;
+      DROP TABLE sync_rejected; DROP TABLE sync_blobs; DROP TABLE number_blocks;`);
     expect(currentSchemaVersion(db)).toBe(2);
     db.close();
     const before = fs.readdirSync(path.join(dataDir, 'backups', 'auto')).filter((f) => f.startsWith('قبل-الترقية'));
