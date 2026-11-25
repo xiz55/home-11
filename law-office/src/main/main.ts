@@ -11,6 +11,10 @@ import { setRuntime } from './runtime';
 import { takeDueReminders } from './services/reminders';
 import { loadReportFonts } from './services/reports';
 import { readSetting } from './services/settings';
+import { CloudService, type SecretStore } from '../sync/cloudService';
+import { setBlobEnsurer } from './services/documents';
+import { attachmentPath } from './paths';
+import { safeStorage } from 'electron';
 
 const APP_ID = 'com.lawoffice.manager';
 const isDev = !app.isPackaged;
@@ -368,6 +372,72 @@ function registerIpc() {
   }
 }
 
+/** مخزن أسرار الجهاز: مشفر بمخزن النظام (DPAPI على ويندوز، Keychain على ماك) عبر safeStorage، خارج مجلد البيانات والنسخ الاحتياطية. */
+function deviceSecrets(): SecretStore {
+  const file = path.join(app.getPath('userData'), 'secure', 'device-secrets.json');
+  const mem = new Map<string, string>();
+  const can = () => safeStorage.isEncryptionAvailable();
+  const load = (): Record<string, string> => {
+    try {
+      return JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch {
+      return {};
+    }
+  };
+  return {
+    async get(k) {
+      if (!can()) return mem.get(k) ?? null;
+      const v = load()[k];
+      return v ? safeStorage.decryptString(Buffer.from(v, 'base64')) : null;
+    },
+    async set(k, v) {
+      if (!can()) {
+        // لا مخزن أسرار متاح (بعض توزيعات لينكس): لا يُحفظ شيء على القرص، ويُطلب الدخول عند كل تشغيل
+        if (v === null) mem.delete(k);
+        else mem.set(k, v);
+        return;
+      }
+      const all = load();
+      if (v === null) delete all[k];
+      else all[k] = safeStorage.encryptString(v).toString('base64');
+      fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+      fs.writeFileSync(file, JSON.stringify(all), { mode: 0o600 });
+    },
+  };
+}
+
+function setupCloud(c: AppCore) {
+  const secrets = deviceSecrets();
+  const platformName = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux';
+  let autoDownload = true;
+  c.cloud = new CloudService({
+    db: () => c.db,
+    secrets,
+    blobStore: {
+      has: (n) => fs.existsSync(attachmentPath(c.paths, n)),
+      read: (n) => new Uint8Array(fs.readFileSync(attachmentPath(c.paths, n))),
+      write: (n, b) => {
+        const f = attachmentPath(c.paths, n);
+        fs.mkdirSync(path.dirname(f), { recursive: true });
+        fs.writeFileSync(`${f}.part`, b);
+        fs.renameSync(`${f}.part`, f);
+      },
+      remove: (n) => fs.rmSync(attachmentPath(c.paths, n), { force: true }),
+    },
+    device: { name: os.hostname(), platform: platformName, appVersion: app.getVersion() },
+    autoDownload: () => autoDownload,
+    onStatus: (s) => mainWindow?.webContents.send('cloud:status', s),
+  });
+  setBlobEnsurer((versionId) => c.cloud!.blobs!.download(versionId));
+  void secrets.get('pref.autoDownload').then((v) => (autoDownload = v !== '0'));
+  void c.cloud
+    .init()
+    .then(() => {
+      if (c.cloud?.getStatus().officeId) c.cloud.startLoop(60_000);
+    })
+    .catch((e) => appendLog(paths, `cloud init: ${(e as Error).message}`));
+}
+
 function startScheduler() {
   const tick = () => {
     if (!core) return;
@@ -436,6 +506,7 @@ app.whenReady().then(() => {
       for (const w of BrowserWindow.getAllWindows()) if (w.webContents.id === id) w.webContents.send('session:locked');
     };
     core.startup();
+    setupCloud(core);
   } catch (e) {
     appendLog(paths, `startup failed: ${(e as Error).stack}`);
     dialog.showErrorBox('تعذر فتح البيانات', `تعذر فتح قاعدة بيانات المكتب.\n${(e as Error).message}\n\nالمجلد: ${dataDir}`);

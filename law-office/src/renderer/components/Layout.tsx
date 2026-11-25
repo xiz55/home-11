@@ -40,6 +40,7 @@ import { PaymentForm, TaskForm } from '../forms/finance';
 import { useCaseLinks } from '../forms/common';
 import { ChangePasswordForm } from '../pages/settingsForms';
 import { ConsultationForm, MeetingForm } from '../forms/appointments';
+import { CloudStatusChip } from '../pages/Cloud';
 import { fmtDateTime } from '../../shared/dates';
 
 const NAV = [
@@ -241,6 +242,7 @@ export function Layout() {
             <Search />
             <input className="input" placeholder="بحث عام: عميل، قضية، رقم، خصم، مذكرة، ملاحظة، مستند…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="البحث العام" />
           </form>
+          <CloudStatusChip />
           <span className="grow" />
           <Dropdown
             trigger={(_o, toggle) => (

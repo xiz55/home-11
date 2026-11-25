@@ -27,6 +27,7 @@ import * as integration from '../services/integration';
 import * as appts from '../services/appointments';
 import * as officeReport from '../services/officeReport';
 import { riyadhToUtcIso } from '../../shared/dates';
+import { syncEnabled } from '../../sync/engine';
 import { listActivity } from '../services/activity';
 import { runtime } from '../runtime';
 import fs from 'node:fs';
@@ -53,6 +54,18 @@ function sessionUserView(ctx: Ctx) {
   return { id: u.id, username: u.username, displayName: u.displayName, role: u.role, permissions: [...u.permissions] };
 }
 
+function requireCloud(core: AppCore) {
+  if (!core.cloud) throw new AppError('INTERNAL', 'المزامنة غير متاحة في هذا الإصدار');
+  return core.cloud;
+}
+
+/** جلسة محلية لمستخدم المكتب المرتبط بالحساب السحابي (بعد مزامنة بياناته). */
+function startCloudSession(ctx: Ctx, core: AppCore, localUserId: string) {
+  const u = auth.loadSessionUser(ctx, localUserId);
+  if (!u) throw new AppError('CONFLICT', 'لم تكتمل المزامنة الأولى لبيانات حسابك على هذا الجهاز بعد. تحقق من الاتصال وأعد المحاولة.');
+  startSession(core, ctx.sessionKey, localUserId);
+}
+
 function startSession(core: AppCore, sessionKey: string, userId: string) {
   core.sessions.set(sessionKey, { userId, lastActivity: core.now().getTime(), locked: false, dirty: false });
 }
@@ -75,6 +88,8 @@ export const REGISTRY = {
         idleMinutes: settings.readSetting(ctx.db, 'security.idleLockMinutes'),
         appVersion: runtime.appVersion,
         platform: runtime.platform,
+        cloud: core.cloud ? core.cloud.getStatus() : null,
+        cloudLinked: !!core.cloud && syncEnabled(ctx.db),
         customDataDir: runtime.customDataDir ? ctx.paths.dataDir : null,
       };
     },
@@ -370,6 +385,136 @@ export const REGISTRY = {
     // البيانات تغيرت كليًا: تنتهي كل الجلسات ويُطلب تسجيل الدخول من جديد
     core.sessions.clear();
     return r;
+  }),
+
+  // ———— الحساب السحابي والمزامنة ————
+  'cloud.status': def('public', empty, (_ctx, _i, core) => core.cloud?.getStatus() ?? { phase: 'not_configured' as const }, { passive: true }),
+  'cloud.config': def('public', empty, (_ctx, _i, core) => core.cloud?.config() ?? { url: null, configured: false }, { passive: true }),
+  'cloud.configure': def('public', z.object({ url: z.string().trim().max(200), anonKey: z.string().trim().max(1000) }), async (ctx, i, core) => {
+    // جهاز جديد بلا حسابات: مسموح؛ جهاز مهيأ: لصاحب المكتب فقط
+    if (auth.isInitialized(ctx)) {
+      const s = core.sessions.get(ctx.sessionKey);
+      const u = s ? auth.loadSessionUser(ctx, s.userId) : null;
+      if (!u || u.role !== 'owner') throw new AppError('FORBIDDEN', 'ضبط الحساب السحابي متاح لصاحب المكتب');
+    }
+    if (!core.cloud) throw new AppError('INTERNAL', 'المزامنة غير متاحة في هذا الإصدار');
+    try {
+      await core.cloud.configure(i);
+    } catch (e) {
+      throw new AppError('VALIDATION', (e as Error).message);
+    }
+    return core.cloud.config();
+  }),
+  'cloud.signIn': def('public', z.object({ email: z.string().trim().email().max(200), password: z.string().min(1).max(200) }), async (ctx, i, core) => {
+    const c = requireCloud(core);
+    let r;
+    try {
+      r = await c.signIn(i.email, i.password);
+    } catch (e) {
+      throw new AppError('VALIDATION', (e as Error).message, { password: (e as Error).message });
+    }
+    if (r.localUserId) startCloudSession(ctx, core, r.localUserId);
+    return { mfaRequired: r.mfaRequired, offline: r.offline, signedIn: !!r.localUserId, needsOffice: !r.mfaRequired && !r.localUserId };
+  }),
+  'cloud.mfaVerify': def('public', z.object({ code: z.string().trim().regex(/^\d{6}$/, 'أدخل الرمز المكون من 6 أرقام') }), async (ctx, i, core) => {
+    let r;
+    try {
+      r = await requireCloud(core).mfaVerify(i.code);
+    } catch (e) {
+      throw new AppError('VALIDATION', (e as Error).message, { code: (e as Error).message });
+    }
+    if (r.localUserId) startCloudSession(ctx, core, r.localUserId);
+    return { signedIn: !!r.localUserId, needsOffice: !r.localUserId };
+  }),
+  'cloud.offices': def('public', empty, (_ctx, _i, core) => requireCloud(core).myOffices()),
+  'cloud.joinOffice': def('public', z.object({ officeId: S.id }), async (ctx, i, core) => {
+    const c = requireCloud(core);
+    try {
+      await c.joinOffice(i.officeId);
+    } catch (e) {
+      throw new AppError('CONFLICT', (e as Error).message);
+    }
+    const offices = await c.myOffices();
+    const mine = offices.find((o) => o.office_id === i.officeId);
+    if (mine) startCloudSession(ctx, core, mine.local_user_id);
+    return { ok: true };
+  }),
+  'cloud.createOffice': def('owner', empty, async (ctx, _i, core) => {
+    const c = requireCloud(core);
+    const u = ctx.user!;
+    // نسخة احتياطية كاملة متسقة (قاعدة + مرفقات) قبل أي نقل — تبقى على هذا الجهاز
+    const backupFile = path.join(ctx.paths.autoBackupsDir, `قبل-النقل-السحابي-${ctx.now().toISOString().replace(/[:.]/g, '-')}.lobk`);
+    await backup.writePackage(ctx.db, ctx.paths, backupFile, { appVersion: runtime.appVersion, createdBy: u.username, now: ctx.now() });
+    try {
+      return { ...(await c.createOffice({ officeName: settings.readSetting(ctx.db, 'office.name'), localOwnerId: u.id, displayName: u.displayName })), backupFile };
+    } catch (e) {
+      throw new AppError('CONFLICT', (e as Error).message);
+    }
+  }),
+  'cloud.syncNow': def('user', empty, async (_ctx, _i, core) => {
+    try {
+      return await requireCloud(core).syncNow();
+    } catch (e) {
+      throw new AppError('STORAGE', `تعذرت المزامنة الآن: ${(e as Error).message}. التعديلات محفوظة على هذا الجهاز وستُرسل لاحقًا.`);
+    }
+  }),
+  'cloud.signOut': def('user', empty, async (ctx, _i, core) => {
+    await requireCloud(core).signOut();
+    core.sessions.delete(ctx.sessionKey);
+    return { ok: true };
+  }, { allowWhenLocked: true }),
+  'cloud.devices': def('user', empty, (_ctx, _i, core) => requireCloud(core).devices()),
+  'cloud.revokeDevice': def('user', z.object({ id: S.id }), (_ctx, i, core) => requireCloud(core).revokeDevice(i.id)),
+  'cloud.mfaFactors': def('user', empty, (_ctx, _i, core) => requireCloud(core).mfaFactors()),
+  'cloud.mfaEnroll': def('user', empty, (_ctx, _i, core) => requireCloud(core).mfaEnroll()),
+  'cloud.mfaEnrollVerify': def('user', z.object({ factorId: z.string().max(100), code: z.string().trim().regex(/^\d{6}$/) }), async (_ctx, i, core) => {
+    try {
+      return await requireCloud(core).mfaEnrollVerify(i.factorId, i.code);
+    } catch (e) {
+      throw new AppError('VALIDATION', (e as Error).message, { code: (e as Error).message });
+    }
+  }),
+  'cloud.requireMfa': def('owner', z.object({ on: z.boolean() }), async (_ctx, i, core) => {
+    try {
+      return await requireCloud(core).setRequireMfa(i.on);
+    } catch (e) {
+      throw new AppError('VALIDATION', (e as Error).message);
+    }
+  }),
+  'cloud.invite': def('owner', z.object({ userId: S.id, email: z.string().trim().email().max(200) }), async (ctx, i, core) => {
+    const u = ctx.db.get<{ display_name: string; permissions: string; role: string }>('SELECT display_name, permissions, role FROM users WHERE id = ?', [i.userId]);
+    if (!u || u.role !== 'consultant') throw new AppError('VALIDATION', 'اختر حساب مستشار');
+    try {
+      return await requireCloud(core).inviteMember({ email: i.email, localUserId: i.userId, displayName: u.display_name, permissions: JSON.parse(u.permissions) });
+    } catch (e) {
+      throw new AppError('CONFLICT', (e as Error).message);
+    }
+  }),
+  'cloud.conflicts': def('user', empty, (_ctx, _i, core) => requireCloud(core).conflicts()),
+  'cloud.resolveConflict': def('user', z.object({ id: S.id, keep: z.enum(['server', 'device']) }), (ctx, i, core) =>
+    requireCloud(core).resolveConflict(i.id, i.keep, (tbl, rid, fields) => {
+      const t = tbl.split('$')[0];
+      const keys = t === 'case_analysis' ? ['case_id'] : ['id'];
+      const sets = Object.keys(fields).filter((k) => /^[a-z_]+$/.test(k));
+      if (!sets.length) return;
+      ctx.db.run(`UPDATE ${t} SET ${sets.map((k) => `${k} = ?`).join(', ')} WHERE ${keys.map((k) => `${k} = ?`).join(' AND ')}`, [...sets.map((k) => (typeof fields[k] === 'object' && fields[k] !== null ? JSON.stringify(fields[k]) : fields[k])), ...rid.split('|')] as never);
+    }),
+  ),
+  'cloud.blobState': def('user', z.object({ versionIds: z.array(S.id).max(500) }), (_ctx, i, core) => {
+    const c = requireCloud(core);
+    c.blobs?.scan();
+    return Object.fromEntries(i.versionIds.map((v) => [v, c.blobs?.state(v) ?? null]));
+  }, { passive: true }),
+  'cloud.blobPin': def('user', z.object({ versionId: S.id, pinned: z.boolean() }), async (_ctx, i, core) => {
+    const c = requireCloud(core);
+    c.blobs!.setPinned(i.versionId, i.pinned);
+    if (i.pinned) await c.blobs!.download(i.versionId).catch(() => undefined);
+    return c.blobs!.state(i.versionId);
+  }),
+  'cloud.blobEvict': def('user', z.object({ versionId: S.id }), async (_ctx, i, core) => {
+    const c = requireCloud(core);
+    await c.blobs!.evict(i.versionId);
+    return c.blobs!.state(i.versionId);
   }),
 
   // ———— التكامل الاختياري ————

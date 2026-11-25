@@ -663,6 +663,24 @@ export function getDocument(ctx: Ctx, input: { id: string }) {
   return { document: d, versions, links };
 }
 
+/** في وضع المزامنة: تنزيل ملف النسخة عند فتحه إن لم يكن على هذا الجهاز (بعد التحقق من الصلاحية محليًا). */
+let blobEnsurer: ((versionId: string) => Promise<void>) | null = null;
+export function setBlobEnsurer(fn: ((versionId: string) => Promise<void>) | null) {
+  blobEnsurer = fn;
+}
+async function ensureLocal(ctx: Ctx, versionId: string) {
+  const v = ctx.db.get<{ document_id: string; stored_name: string }>('SELECT document_id, stored_name FROM document_versions WHERE id = ?', [versionId]);
+  if (!v) throw notFound('نسخة المستند');
+  requireDocAccess(ctx, v.document_id);
+  if (!fs.existsSync(attachmentPath(ctx.paths, v.stored_name)) && blobEnsurer) {
+    try {
+      await blobEnsurer(versionId);
+    } catch (e) {
+      throw new AppError('STORAGE', `تعذر تنزيل الملف الآن: ${(e as Error).message}`);
+    }
+  }
+}
+
 function versionRow(ctx: Ctx, versionId: string) {
   const v = ctx.db.get<{ id: string; document_id: string; stored_name: string; original_name: string; ext: AllowedExt; mime: string; size: number; version_no: number; sha256: string }>(
     'SELECT id, document_id, stored_name, original_name, ext, mime, size, version_no, sha256 FROM document_versions WHERE id = ?',
@@ -676,8 +694,9 @@ function versionRow(ctx: Ctx, versionId: string) {
   return { ...v, file };
 }
 
-export function readVersionBytes(ctx: Ctx, input: { versionId: string }) {
+export async function readVersionBytes(ctx: Ctx, input: { versionId: string }) {
   requireUser(ctx);
+  await ensureLocal(ctx, input.versionId);
   const v = versionRow(ctx, input.versionId);
   const kind = ALLOWED_EXTENSIONS[v.ext].kind;
   if (kind !== 'pdf' && kind !== 'image') throw new AppError('VALIDATION', 'المعاينة المباشرة متاحة لملفات PDF والصور فقط.');
@@ -686,6 +705,7 @@ export function readVersionBytes(ctx: Ctx, input: { versionId: string }) {
 
 export async function docxPreview(ctx: Ctx, input: { versionId: string }) {
   requireUser(ctx);
+  await ensureLocal(ctx, input.versionId);
   const v = versionRow(ctx, input.versionId);
   if (v.ext !== 'docx') throw new AppError('VALIDATION', 'المعاينة النصية متاحة لملفات DOCX فقط.');
   const mammoth = await import('mammoth');
@@ -712,6 +732,7 @@ function workingCopy(ctx: Ctx, v: { file: string; original_name: string; version
 /** يفتح نسخة اطلاع من المستند بالبرنامج الافتراضي في نظام التشغيل (ويندوز أو ماك)؛ الأصل المؤرشف لا يُفتح للتعديل. */
 export async function openVersion(ctx: Ctx, input: { versionId: string }) {
   requireUser(ctx);
+  await ensureLocal(ctx, input.versionId);
   const v = versionRow(ctx, input.versionId);
   const target = workingCopy(ctx, v);
   const err = await ctx.platform.openPath(target);
@@ -732,8 +753,9 @@ export async function openVersion(ctx: Ctx, input: { versionId: string }) {
   return { opened: true, message: 'فُتحت نسخة للاطلاع. لحفظ تعديلاتك أضفها للبرنامج كنسخة جديدة من المستند.' };
 }
 
-export function showVersionInFolder(ctx: Ctx, input: { versionId: string }) {
+export async function showVersionInFolder(ctx: Ctx, input: { versionId: string }) {
   requireUser(ctx);
+  await ensureLocal(ctx, input.versionId);
   const v = versionRow(ctx, input.versionId);
   const target = workingCopy(ctx, v);
   ctx.platform.showItemInFolder(target);
@@ -742,6 +764,7 @@ export function showVersionInFolder(ctx: Ctx, input: { versionId: string }) {
 
 export async function exportVersion(ctx: Ctx, input: { versionId: string }) {
   requireUser(ctx);
+  await ensureLocal(ctx, input.versionId);
   const v = versionRow(ctx, input.versionId);
   const dest = await ctx.platform.showSaveFile({ title: 'تصدير نسخة من المستند', defaultName: safeFileName(v.original_name), filters: [{ name: v.ext.toUpperCase(), extensions: [v.ext] }] });
   if (!dest) return { saved: false };

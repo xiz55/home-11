@@ -4,6 +4,7 @@ import { Alert, Button, TextInput, Field } from '../components/ui';
 import { ApiError, api } from '../lib/api';
 import { useForm } from '../lib/hooks';
 import { useSession, useOs } from '../lib/session';
+import { CloudSignIn, JoinDevice } from './Cloud';
 import { DEFAULT_OFFICE_NAME } from '../../shared/constants';
 
 function PasswordInput({ label, value, onChange, error, autoFocus, name, hint }: { label: string; value: string; onChange: (v: string) => void; error?: string; autoFocus?: boolean; name?: string; hint?: string }) {
@@ -59,10 +60,21 @@ export function RecoveryCodeNotice({ code, onDone }: { code: string; onDone: () 
 export function SetupScreen() {
   const { refresh } = useSession();
   const os = useOs();
+  const [join, setJoin] = useState(false);
   const f = useForm({ officeName: DEFAULT_OFFICE_NAME, displayName: '', username: '', password: '', confirm: '' });
   const [busy, setBusy] = useState(false);
   const [code, setCode] = useState<string | null>(null);
   if (code) return <RecoveryCodeNotice code={code} onDone={() => void refresh()} />;
+  if (join)
+    return (
+      <div className="auth-screen">
+        <div className="auth-card" style={{ width: 'min(560px, 100%)' }}>
+          <OfficeHeader name="ربط هذا الجهاز بحساب المكتب" sub="لجهاز إضافي (ماك أو ويندوز أو آيفون) لمكتب يعمل بالمزامنة السحابية" />
+          <JoinDevice onDone={() => void refresh()} />
+          <Button variant="ghost" onClick={() => setJoin(false)}>رجوع</Button>
+        </div>
+      </div>
+    );
   const submit = async () => {
     if (f.values.password !== f.values.confirm) {
       f.setErrors({ confirm: 'كلمتا المرور غير متطابقتين' });
@@ -100,6 +112,9 @@ export function SetupScreen() {
             إنشاء الحساب
           </Button>
           <div className="help">تسجيل الدخول يحمي الوصول عبر البرنامج، لكنه لا يشفّر الملفات على القرص. احمِ جهازك ب{os.diskEncryption} إن أمكن.</div>
+          <Button variant="ghost" onClick={() => setJoin(true)}>
+            لدى المكتب حساب سحابي؟ ربط هذا الجهاز به بدل إنشاء مكتب جديد
+          </Button>
         </div>
       </form>
     </div>
@@ -108,12 +123,23 @@ export function SetupScreen() {
 
 export function LoginScreen() {
   const { state, refresh } = useSession();
+  const cloudLinked = !!(state as { cloudLinked?: boolean } | null)?.cloudLinked;
   const [mode, setMode] = useState<'login' | 'recover'>('login');
   const f = useForm({ username: '', password: '', recoveryCode: '', newPassword: '' });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [code, setCode] = useState<string | null>(null);
   if (code) return <RecoveryCodeNotice code={code} onDone={() => void refresh()} />;
+  if (cloudLinked)
+    return (
+      <div className="auth-screen">
+        <div className="auth-card">
+          <OfficeHeader name={state?.officeName ?? ''} sub="الدخول بحساب المكتب (المزامنة السحابية)" />
+          <CloudSignIn onDone={() => void refresh()} />
+          <div className="help">دون اتصال: يمكن الدخول على جهاز سبق الدخول عليه بالحساب نفسه، وتُزامن التغييرات عند عودة الاتصال.</div>
+        </div>
+      </div>
+    );
   const submit = async () => {
     setBusy(true);
     setError(null);

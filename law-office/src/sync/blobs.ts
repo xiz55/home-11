@@ -18,7 +18,7 @@ export interface BlobStore {
 export type BlobState = 'pending_upload' | 'uploading' | 'uploaded' | 'remote' | 'downloading' | 'local' | 'failed';
 
 async function sha256Hex(b: Uint8Array): Promise<string> {
-  const d = await crypto.subtle.digest('SHA-256', b);
+  const d = await crypto.subtle.digest('SHA-256', b as Uint8Array<ArrayBuffer>);
   return [...new Uint8Array(d)].map((x) => x.toString(16).padStart(2, '0')).join('');
 }
 
@@ -105,7 +105,7 @@ export class BlobSync {
     if (req.body.status !== 'verified') {
       const bytes = await this.store.read(v.stored_name);
       if (bytes.byteLength !== v.size || (await sha256Hex(bytes)) !== v.sha256) throw new Error('local file does not match its record');
-      const put = await this.fetchImpl(String(req.body.url), { method: 'PUT', headers: req.body.headers as Record<string, string>, body: bytes });
+      const put = await this.fetchImpl(String(req.body.url), { method: 'PUT', headers: req.body.headers as Record<string, string>, body: bytes as Uint8Array<ArrayBuffer> });
       if (!put.ok) throw new Error(`upload failed ${put.status}`);
       const done = await this.api.call({ action: 'complete', office_id: office, version_id: v.id });
       if (done.status !== 200 || done.body.status !== 'verified') throw new Error(`verification failed: ${JSON.stringify(done.body)}`);

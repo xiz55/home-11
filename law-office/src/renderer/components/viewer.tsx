@@ -1,4 +1,5 @@
 // عارض المستندات المحلي: PDF (pdf.js محلي)، الصور، معاينة نصية لـ DOCX، وشرح لملفات DOC.
+import { BlobBadge } from '../pages/Cloud';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
 import * as pdfjs from 'pdfjs-dist';
@@ -237,6 +238,7 @@ export function DocumentPanel({ documentId, onClose }: { documentId: string; onC
           </select>
         )}
         {versions.length === 1 && <span className="muted">النسخة 1</span>}
+        <BlobBadge versionId={v.id} />
       </div>
       {links.length > 0 && (
         <div className="viewer-toolbar small">

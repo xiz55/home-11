@@ -16,6 +16,7 @@ import { autoSnapshot } from './services/backup';
 import { REGISTRY, type MethodName } from './ipc/registry';
 import { zodFieldErrors } from '../shared/schemas';
 import { ZodError } from 'zod';
+import type { CloudService } from '../sync/cloudService';
 
 export interface Session {
   userId: string;
@@ -50,6 +51,8 @@ export class AppCore {
   readonly paths: AppPaths;
   readonly sessions = new Map<string, Session>();
   extraction: ExtractionQueue;
+  /** خدمة الحساب السحابي والمزامنة (اختيارية؛ تُضبط من العملية الرئيسية) */
+  cloud: CloudService | null = null;
   onLocked?: (sessionKey: string) => void;
 
   constructor(
@@ -140,6 +143,8 @@ export class AppCore {
       }
       const ctx: Ctx = { db: this.db, paths: this.paths, user, sessionKey, platform: this.platform, now: this.now };
       const data = await def.handler(ctx, parsed.data as never, this);
+      // أي تعديل محلي يُجدول مزامنة قريبة (الطابور الدائم يحفظه حتى لو لم يتوفر اتصال)
+      if (this.cloud && !def.passive && !channel.startsWith('cloud.')) this.cloud.localChanged();
       return { ok: true, data };
     } catch (e) {
       if (e instanceof AppError) return { ok: false, error: { code: e.code, message: e.message, fields: e.fields, extra: e.extra } };

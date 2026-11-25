@@ -1,7 +1,7 @@
 // جسر محدود بين الواجهة والعملية الرئيسية: استدعاء أوامر مسماة فقط، والاستماع لأحداث محددة.
 import { contextBridge, ipcRenderer } from 'electron';
 
-const EVENTS = new Set(['session:locked', 'reminders:fired', 'app:navigate']);
+const EVENTS = new Set(['session:locked', 'reminders:fired', 'app:navigate', 'cloud:status']);
 const CHANNEL = /^[a-zA-Z]+\.[a-zA-Z]+$/;
 
 contextBridge.exposeInMainWorld('lawApi', {
