@@ -28,6 +28,8 @@ export interface CloudDeps {
   fetch?: typeof fetch;
   now?: () => Date;
   onStatus?: (s: CloudStatus) => void;
+  /** فترة المزامنة الدورية بالمللي ثانية (0 = بلا مزامنة دورية، للاختبارات). */
+  loopMs?: number;
 }
 
 export interface CloudConfig {
@@ -202,9 +204,10 @@ export class CloudService {
     const offices = await this.myOffices();
     const db = this.d.db();
     const officeId = getState(db, 'office_id');
-    const mine = offices.find((o) => o.office_id === officeId) ?? (officeId ? null : offices[0] ?? null);
-    if (officeId && !mine) throw new Error('هذا الحساب ليس عضوًا في مكتب هذا الجهاز');
-    if (!mine) return null; // لا مكتب بعد: يختار المالك إنشاءه من الإعدادات
+    // جهاز لم ينضم لمكتب بعد: لا جلسة محلية؛ يختار المستخدم المكتب (انضمام) أو ينشئه صاحب المكتب من الإعدادات
+    if (!officeId) return null;
+    const mine = offices.find((o) => o.office_id === officeId);
+    if (!mine) throw new Error('هذا الحساب ليس عضوًا في مكتب هذا الجهاز');
     setState(db, 'office_name', mine.name);
     setState(db, 'local_user_id', mine.local_user_id);
     const { data: u } = await sb.auth.getUser();
@@ -256,6 +259,8 @@ export class CloudService {
     setState(db, 'office_name', input.officeName);
     setState(db, 'local_user_id', input.localOwnerId);
     setState(db, 'migration_counts', JSON.stringify(counts));
+    const { data: u } = await sb.auth.getUser();
+    if (u.user?.email) await this.d.secrets.set(`offline.local.${u.user.email.toLowerCase()}`, input.localOwnerId);
     await this.touchDevice();
     this.emit({ officeId, officeName: input.officeName });
     return { officeId, counts };
@@ -263,7 +268,14 @@ export class CloudService {
 
   async joinOffice(officeId: string) {
     const db = this.d.db();
+    const mine = (await this.myOffices()).find((o) => o.office_id === officeId);
+    if (!mine) throw new Error('هذا الحساب ليس عضوًا في هذا المكتب');
     joinCloudOffice(db, officeId);
+    setState(db, 'office_name', mine.name);
+    setState(db, 'local_user_id', mine.local_user_id);
+    const { data: u } = await this.requireSb().auth.getUser();
+    if (u.user?.email) await this.d.secrets.set(`offline.local.${u.user.email.toLowerCase()}`, mine.local_user_id);
+    this.emit({ officeId, officeName: mine.name });
     await this.touchDevice();
     return this.syncNow();
   }
@@ -284,6 +296,9 @@ export class CloudService {
       } else await this.blobs!.downloadAll(true);
       await this.touchDevice().catch(() => undefined);
       this.emit({ phase: 'idle', lastSyncAt: this.now().toISOString() });
+      // بعد أول مزامنة ناجحة (دخول/انضمام/إنشاء المكتب) تبدأ المزامنة الدورية دون انتظار إعادة التشغيل
+      const ms = this.d.loopMs ?? 60_000;
+      if (!this.timer && ms > 0) this.timer = setInterval(() => void this.syncNow().catch(() => undefined), ms);
       return r;
     } catch (e) {
       if (e instanceof SyncRevokedError) {
@@ -303,9 +318,9 @@ export class CloudService {
     this.dirtyTimer = setTimeout(() => void this.syncNow().catch(() => undefined), 4000);
   }
 
-  startLoop(intervalMs = 60_000) {
+  startLoop(intervalMs = this.d.loopMs ?? 60_000) {
     this.stopLoop();
-    this.timer = setInterval(() => void this.syncNow().catch(() => undefined), intervalMs);
+    if (intervalMs > 0) this.timer = setInterval(() => void this.syncNow().catch(() => undefined), intervalMs);
     void this.syncNow().catch(() => undefined);
   }
   stopLoop() {

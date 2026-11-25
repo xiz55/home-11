@@ -14,7 +14,9 @@ export async function pgAvailable(): Promise<boolean> {
     await c.connect();
     await c.end();
     return true;
-  } catch {
+  } catch (e) {
+    // في CI نطلب تشغيل القاعدة فعلًا: لا تُتخطى الاختبارات بصمت
+    if (process.env.LAWSYNC_REQUIRE_PG) throw new Error(`cloud test database unavailable: ${(e as Error).message}`);
     return false;
   }
 }
