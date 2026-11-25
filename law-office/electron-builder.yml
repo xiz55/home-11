@@ -53,24 +53,14 @@ mac:
   hardenedRuntime: false
   gatekeeperAssess: false
   notarize: false
+  # يُغلَّف التطبيق مجلدًا ثم يُنشأ DMG بأداة hdiutil الأصلية (scripts/make-dmg.sh)
   target:
-    - target: dmg
-  artifactName: "LawOfficeManager-${version}-mac-${arch}.${ext}"
+    - target: dir
   extendInfo:
     CFBundleDisplayName: "إدارة مكتب المحاماة"
     CFBundleDevelopmentRegion: ar
     CFBundleLocalizations: [ar]
     NSHumanReadableCopyright: "Law Office Manager — بيانات محلية على هذا الجهاز"
-dmg:
-  title: "إدارة مكتب المحاماة"
-  artifactName: "LawOfficeManager-${version}-mac-${arch}.${ext}"
-  contents:
-    - x: 140
-      y: 180
-    - x: 400
-      y: 180
-      type: link
-      path: /Applications
 linux:
   executableName: law-office-manager
   icon: resources/icon.png

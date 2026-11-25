@@ -45,7 +45,10 @@ jobs:
       - name: Unit and integration tests (macOS)
         run: npx vitest run
       - name: Package macOS app and DMG
-        run: npx electron-builder --mac dmg --${{ matrix.arch }} --publish never
+        run: |
+          npx electron-builder --mac dir --${{ matrix.arch }} --publish never
+          VERSION=$(node -p "require('./package.json').version")
+          ./scripts/make-dmg.sh "release/${{ matrix.appdir }}/LawOfficeManager.app" "release/LawOfficeManager-$VERSION-mac-${{ matrix.arch }}.dmg"
       - name: Inspect the packaged app (architecture, signature, Gatekeeper)
         run: |
           APP="release/${{ matrix.appdir }}/LawOfficeManager.app"
