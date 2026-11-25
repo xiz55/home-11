@@ -35,11 +35,13 @@ jobs:
         run: xcodebuild -version
       - name: Build for iOS Simulator (unsigned)
         run: |
+          set -o pipefail
           xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/sim CODE_SIGNING_ALLOWED=NO build | tail -n 30
       - name: Compile for iPhone hardware (unsigned — compile check only, not installable)
         run: |
+          set -o pipefail
           xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' \
             -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO build | tail -n 30

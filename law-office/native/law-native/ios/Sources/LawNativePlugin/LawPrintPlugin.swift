@@ -13,7 +13,7 @@ public class LawPrintPlugin: CAPPlugin, CAPBridgedPlugin, WKNavigationDelegate {
         CAPPluginMethod(name: "pdf", returnType: CAPPluginReturnPromise)
     ]
 
-    private var webView: WKWebView?
+    private var printView: WKWebView?
     private var onLoaded: ((WKWebView) -> Void)?
 
     private func render(html: String, then: @escaping (WKWebView) -> Void) {
@@ -23,7 +23,7 @@ public class LawPrintPlugin: CAPPlugin, CAPBridgedPlugin, WKNavigationDelegate {
             cfg.defaultWebpagePreferences.allowsContentJavaScript = false
             let wv = WKWebView(frame: CGRect(x: 0, y: 0, width: 794, height: 1123), configuration: cfg)
             wv.navigationDelegate = self
-            self.webView = wv
+            self.printView = wv
             self.onLoaded = then
             wv.loadHTMLString(html, baseURL: nil)
         }
@@ -49,7 +49,7 @@ public class LawPrintPlugin: CAPPlugin, CAPBridgedPlugin, WKNavigationDelegate {
             pc.printInfo = info
             pc.printFormatter = wv.viewPrintFormatter()
             pc.present(animated: true) { _, completed, error in
-                self.webView = nil
+                self.printView = nil
                 if let error = error { call.reject(error.localizedDescription) } else { call.resolve(["completed": completed]) }
             }
         }
@@ -76,7 +76,7 @@ public class LawPrintPlugin: CAPPlugin, CAPBridgedPlugin, WKNavigationDelegate {
                 renderer.drawPage(at: i, in: bounds)
             }
             UIGraphicsEndPDFContext()
-            self.webView = nil
+            self.printView = nil
             call.resolve(["base64": data.base64EncodedString()])
         }
     }

@@ -26,10 +26,17 @@ docker run -d --name sbrestore-auth --network host -e GOTRUE_API_HOST=127.0.0.1 
 for _ in $(seq 1 60); do curl -fs http://127.0.0.1:9998/health >/dev/null && break; sleep 2; done
 docker rm -f sbrestore-auth >/dev/null
 
-# 3) الاستعادة: الحسابات أولًا ثم بيانات المكتب
-pg_restore --dbname="$DST" --data-only --no-owner --disable-triggers "$WORK"/lawoffice-auth-*.dump
+# 3) الاستعادة: الحسابات أولًا ثم بيانات المكتب.
+# أدوات pg_restore الأحدث (17+) ترسل الإعداد transaction_timeout الذي لا يعرفه خادم 15 — خطأ غير مؤثر يُتجاهل وحده؛ أي خطأ آخر يُفشل الاختبار.
+restore() {
+  local log="$WORK/restore.log"
+  pg_restore "$@" >"$log" 2>&1 || true
+  cat "$log"
+  if grep 'error:' "$log" | grep -v 'transaction_timeout' | grep -q .; then echo "RESTORE ERRORS"; exit 1; fi
+}
+restore --dbname="$DST" --data-only --no-owner --disable-triggers "$WORK"/lawoffice-auth-*.dump
 psql "$DST" -qc 'drop schema if exists public cascade'
-pg_restore --dbname="$DST" --no-owner --exit-on-error "$WORK"/lawoffice-public-*.dump
+restore --dbname="$DST" --no-owner "$WORK"/lawoffice-public-*.dump
 psql "$DST" -q -c 'grant usage on schema public to anon, authenticated, service_role' \
   -c 'grant all on all tables in schema public to authenticated, service_role' \
   -c 'grant all on all sequences in schema public to authenticated, service_role' \
