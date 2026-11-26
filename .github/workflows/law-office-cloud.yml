@@ -1,0 +1,70 @@
+# اختبارات السحابة على مكدس Supabase محلي حقيقي (PostgreSQL + GoTrue + PostgREST) — بيانات خيالية ومفاتيح اختبار فقط.
+name: law-office-cloud
+
+on:
+  push:
+    branches: [claude/law-office-management-app-fzfje8]
+    paths: ['law-office/**', '.github/workflows/law-office-cloud.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cloud-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: law-office
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: law-office/package-lock.json
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Start local Supabase stack
+        run: bash scripts/cloud-test-stack.sh
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit + cloud tests (RLS, sync, attachments, auth/MFA/devices)
+        env:
+          LAWSYNC_REQUIRE_PG: '1'
+        run: npx vitest run
+      - name: Cloud backup + restore into a separate server, compared record by record
+        run: bash scripts/cloud-restore-test.sh
+      - name: Shared logic on the iPhone engine (sql.js/WebAssembly)
+        env:
+          LAWSYNC_REQUIRE_PG: '1'
+        run: npm run test:sqljs
+      - name: Build desktop app + secure-link web UI
+        run: npm run build
+      - name: Secure link on Safari's engine (WebKit) at iPhone size
+        env:
+          LAWSYNC_REQUIRE_WEBKIT: '1'
+        run: |
+          npx playwright install --with-deps webkit
+          npx vitest run tests/hub/webkit.test.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: law-office-webkit-screenshots
+          path: law-office/test-results/webkit
+          if-no-files-found: ignore
+      - name: Build iPhone web bundle
+        run: node scripts/build-mobile.mjs
+      - name: Install Chromium for phone-size tests
+        run: npx playwright install --with-deps chromium
+      - name: iPhone build in phone-size browser (local data, layout, persistence)
+        run: node tests/mobile/smoke.mjs
+      - name: iPhone build cloud sync against local Supabase
+        run: node tests/mobile/cloud.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: law-office-mobile-web-screenshots
+          path: law-office/test-results/mobile
+          if-no-files-found: ignore

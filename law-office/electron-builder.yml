@@ -1,0 +1,73 @@
+appId: com.lawoffice.manager
+productName: LawOfficeManager
+copyright: "Law Office Manager"
+directories:
+  output: release
+  buildResources: resources
+files:
+  - dist/**/*
+  - package.json
+  - "!**/*.map"
+extraResources:
+  - from: docs/
+    to: docs/
+    filter: ["**/*"]
+asar: true
+asarUnpack:
+  - dist/mcp/**
+  - dist/main/extract-worker.mjs
+compression: normal
+publish: null
+electronFuses:
+  runAsNode: true
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: true
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false
+win:
+  executableName: LawOfficeManager
+  icon: resources/icon.ico
+  target:
+    - target: nsis
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: "مكتب المحامي محمد إبراهيم الشهراني للمحاماة"
+  uninstallDisplayName: "مكتب المحامي محمد إبراهيم الشهراني للمحاماة"
+  deleteAppDataOnUninstall: false
+  artifactName: "LawOfficeManager-Setup-${version}-${arch}.${ext}"
+  installerLanguages:
+    - ar_SA
+  language: "1025"
+mac:
+  icon: resources/icon.png
+  category: public.app-category.business
+  darkModeSupport: false
+  # لا توجد شهادة مطور من Apple في بيئة البناء: توقيع محلي (ad-hoc) فقط ليعمل على Apple Silicon. ليس توقيعًا موثّقًا من Apple.
+  identity: "-"
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  notarize: false
+  # يُغلَّف التطبيق مجلدًا ثم يُنشأ DMG بأداة hdiutil الأصلية (scripts/make-dmg.sh)
+  target:
+    - target: dir
+  extraResources:
+    - from: resources/mac/ar.lproj/
+      to: ar.lproj/
+  extendInfo:
+    CFBundleDisplayName: "مكتب المحامي محمد إبراهيم الشهراني للمحاماة"
+    LSHasLocalizedDisplayName: true
+    CFBundleDevelopmentRegion: ar
+    CFBundleLocalizations: [ar]
+    NSHumanReadableCopyright: "Law Office Manager — بيانات محلية على هذا الجهاز"
+linux:
+  executableName: law-office-manager
+  icon: resources/icon.png
+  category: Office
+  target:
+    - target: dir
