@@ -195,7 +195,8 @@ export function createHubServer(d: HubDeps): http.Server {
         const m = (e as Error).message;
         if (m === 'NO_EMAIL') throw new HttpError(409, 'لم يُضبط بريد إلكتروني لهذا المستخدم لاستقبال رمز التحقق. يضبطه صاحب المكتب من جهاز المكتب.');
         if (m === 'TOO_MANY_CODES') throw new HttpError(429, 'طُلبت رموز كثيرة. انتظر ربع ساعة.');
-        throw new HttpError(502, 'تعذر إرسال رمز التحقق بالبريد. تحقق من إعداد البريد على جهاز المكتب.');
+        if (m === 'البريد غير مضبوط') throw new HttpError(409, 'لم يُضبط بريد Gmail على جهاز المكتب بعد. يضبطه صاحب المكتب من جهاز المكتب: الإعدادات ← ربط الأجهزة ← بريد Gmail.');
+        throw new HttpError(502, 'تعذر إرسال رمز التحقق من بريد Gmail المضبوط على جهاز المكتب. تأكد من «كلمة مرور التطبيق» بزر «إرسال رسالة تجربة» على جهاز المكتب.');
       }
     }
     if (p === '/api/web/verify' && req.method === 'POST') {
@@ -265,7 +266,8 @@ export function createHubServer(d: HubDeps): http.Server {
         const m = (e as Error).message;
         if (m === 'NO_EMAIL') throw new HttpError(409, 'لم يُضبط بريد إلكتروني لصاحب المكتب على جهاز المكتب.');
         if (m === 'TOO_MANY_CODES') throw new HttpError(429, 'طُلبت رموز كثيرة. انتظر ربع ساعة.');
-        throw new HttpError(502, 'تعذر إرسال رمز التحقق بالبريد.');
+        if (m === 'البريد غير مضبوط') throw new HttpError(409, 'لم يُضبط بريد Gmail على جهاز المكتب بعد. على جهاز المكتب: الإعدادات ← ربط الأجهزة ← بريد Gmail، ثم «إرسال رسالة تجربة».');
+        throw new HttpError(502, 'تعذر إرسال رمز التحقق من بريد Gmail المضبوط على جهاز المكتب. تأكد من «كلمة مرور التطبيق» بزر «إرسال رسالة تجربة» على جهاز المكتب.');
       }
     }
     if (p === '/api/link/verify' && req.method === 'POST') {
