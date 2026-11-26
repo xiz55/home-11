@@ -1,5 +1,5 @@
 // نقطة دخول Electron. الواجهة معزولة (contextIsolation + sandbox، بلا nodeIntegration)، وكل الوصول للبيانات والملفات هنا.
-import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, powerSaveBlocker, protocol, session, shell, type MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, powerSaveBlocker, protocol, session, shell, Tray, type MenuItemConstructorOptions } from 'electron';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -269,6 +269,24 @@ function createWindow() {
   buildContextMenu(mainWindow);
   mainWindow.once('ready-to-show', () => mainWindow?.show());
   mainWindow.on('close', (e) => {
+    // جهاز المكتب (الخادم يعمل): إغلاق النافذة يخفي البرنامج ولا يوقفه، حتى يبقى الماك والآيفون متصلين.
+    // تُقفل الجلسة عند الإخفاء فلا يرى أحد البيانات على جهاز المكتب دون كلمة المرور.
+    if (core?.hub?.running() && !quitting) {
+      e.preventDefault();
+      const k = `wc-${mainWindow!.webContents.id}`;
+      const ses = core.sessions.get(k);
+      if (ses) {
+        ses.locked = true;
+        mainWindow!.webContents.send('session:locked');
+      }
+      mainWindow!.hide();
+      ensureTray();
+      if (!trayHintShown && process.platform === 'win32') {
+        trayHintShown = true;
+        tray?.displayBalloon({ title: 'خادم المكتب ما زال يعمل', content: 'أُخفي البرنامج ولم يُغلق، حتى يبقى الماك والآيفون متصلين. افتحه من الأيقونة بجانب الساعة.' });
+      }
+      return;
+    }
     const key = `wc-${mainWindow!.webContents.id}`;
     const s = core?.sessions.get(key);
     if (s?.dirty) {
@@ -287,6 +305,42 @@ function createWindow() {
     mainWindow = null;
   });
   void mainWindow.loadURL('app://local/index.html');
+}
+
+let quitting = false;
+let tray: Tray | null = null;
+let trayHintShown = false;
+
+/** أيقونة بجانب الساعة لجهاز المكتب: فتح البرنامج، أو إيقاف الخادم وإغلاق البرنامج كليًا. */
+function ensureTray() {
+  if (tray || process.platform === 'darwin') return;
+  const icon = nativeImage.createFromPath(path.join(__dirname, '..', 'icon.png')).resize({ width: 16, height: 16 });
+  tray = new Tray(icon);
+  tray.setToolTip('مكتب المحامي محمد إبراهيم الشهراني للمحاماة — خادم المكتب يعمل');
+  const show = () => {
+    if (!mainWindow) createWindow();
+    else {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  };
+  tray.on('click', show);
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'فتح البرنامج', click: show },
+      { type: 'separator' },
+      {
+        label: 'إيقاف خادم المكتب وإغلاق البرنامج',
+        click: () => {
+          const r = dialog.showMessageBoxSync({ type: 'warning', buttons: ['إلغاء', 'إغلاق البرنامج'], defaultId: 0, cancelId: 0, title: 'إغلاق البرنامج', message: 'سيتوقف خادم المكتب، ولن يتمكن الماك والآيفون من الاتصال حتى تفتح البرنامج من جديد.' });
+          if (r === 1) {
+            quitting = true;
+            app.quit();
+          }
+        },
+      },
+    ]),
+  );
 }
 
 /** قائمة التطبيق: على ماك قائمة عربية قياسية باختصارات Command (نسخ/لصق/تكبير/إغلاق)، وعلى ويندوز لا شريط قوائم. */
@@ -456,6 +510,7 @@ function setupCloud(c: AppCore) {
   let blocker: number | null = null;
   const keepAwake = () => {
     if (c.hub?.running()) {
+      ensureTray();
       // جهاز المكتب يبقى متاحًا: يمنع تعليق البرنامج، ويبدأ مع تسجيل الدخول إلى ويندوز
       if (blocker === null) blocker = powerSaveBlocker.start('prevent-app-suspension');
       app.setLoginItemSettings({ openAtLogin: true });
@@ -532,6 +587,7 @@ process.on('unhandledRejection', (e) => appendLog(paths, `unhandled: ${(e as Err
 app.on('second-instance', () => {
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
     mainWindow.focus();
   }
 });
@@ -581,7 +637,9 @@ app.on('web-contents-created', (_e, wc) => {
 });
 
 app.on('window-all-closed', () => {
-  // على ماك يبقى التطبيق في شريط Dock كالمعتاد بعد إغلاق النافذة، ويُغلق بـ Command+Q
+  // على ماك يبقى التطبيق في شريط Dock كالمعتاد بعد إغلاق النافذة، ويُغلق بـ Command+Q.
+  // جهاز المكتب والخادم يعمل: يبقى البرنامج في الخلفية.
+  if (core?.hub?.running() && !quitting) return;
   if (process.platform !== 'darwin') app.quit();
 });
 
@@ -591,6 +649,7 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', () => {
+  quitting = true;
   try {
     core?.shutdown();
   } catch {

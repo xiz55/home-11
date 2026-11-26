@@ -176,4 +176,14 @@ describe('خادم المكتب المحلي: جهاز المكتب + الماك
     await A.win.getByText('الأجهزة المرتبطة').waitFor();
     await shot(A.win, 'hub-08-office-devices');
   });
+  it('7. إغلاق نافذة جهاز المكتب لا يوقف الخادم (يُخفى البرنامج في الخلفية)', { timeout: 60000 }, async () => {
+    await A.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+    await new Promise((r) => setTimeout(r, 1500));
+    const visible = await A.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.isVisible()));
+    assert.deepEqual(visible, [false]);
+    const r = await fetch(BASE + '/api/web/state');
+    assert.equal(r.status, 200);
+    // يعود عند فتحه
+    await A.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].show());
+  });
 });
