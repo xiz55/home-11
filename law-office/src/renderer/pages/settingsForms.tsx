@@ -165,6 +165,25 @@ export function IntegrationTokenForm({ onClose }: { onClose: () => void }) {
           <Alert tone="warning">انسخ الرمز الآن؛ لن يظهر مرة أخرى. يحفظ البرنامج بصمته فقط. يمكنك إلغاؤه في أي وقت.</Alert>
           <div className="code-box" style={{ fontSize: 14 }}>{result.token}</div>
           <div className="row"><Button size="sm" icon={<Copy />} onClick={() => copy(result.token)}>نسخ الرمز</Button></div>
+          <h3>Claude في المتصفح وتطبيق Claude (باشتراكك الحالي)</h3>
+          {snippets.claudeWebUrl ? (
+            <>
+              <ol className="help" style={{ paddingInlineStart: 18, lineHeight: 2 }}>
+                <li>افتح claude.ai ← Customize ← Connectors ← «+» ← Add custom connector.</li>
+                <li>الاسم: مكتب المحاماة — والعنوان (URL):</li>
+              </ol>
+              <pre className="snippet">{snippets.claudeWebUrl}</pre>
+              <div className="row"><Button size="sm" icon={<Copy />} onClick={() => copy(snippets.claudeWebUrl!)}>نسخ العنوان</Button></div>
+              <ol className="help" start={3} style={{ paddingInlineStart: 18, lineHeight: 2 }}>
+                <li>طريقة الدخول: No sign in (دون تسجيل دخول)، ثم في «Request headers» أضف الاسم Authorization والقيمة:</li>
+              </ol>
+              <pre className="snippet">{snippets.claudeWebHeader}</pre>
+              <div className="row"><Button size="sm" icon={<Copy />} onClick={() => copy(snippets.claudeWebHeader)}>نسخ القيمة</Button></div>
+              <div className="help">يعمل بعدها في المتصفح وتطبيق Claude على الماك وويندوز والآيفون. يمر ما يقرؤه Claude عبر خوادم Anthropic، والبيانات نفسها تبقى في جهاز المكتب. الإلغاء من هنا يوقفه فورًا.</div>
+            </>
+          ) : (
+            <Alert tone="info">لاستخدامه من claude.ai: شغّل «خادم المكتب» واحفظ الرابط الآمن في «ربط الأجهزة بجهاز المكتب»، ثم أصدر رمزًا جديدًا.</Alert>
+          )}
           <h3>إعداد Claude Code (أمر سطر الأوامر)</h3>
           <pre className="snippet">{snippets.claudeCli}</pre>
           <div className="row"><Button size="sm" icon={<Copy />} onClick={() => copy(snippets.claudeCli)}>نسخ</Button></div>

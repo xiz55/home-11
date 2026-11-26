@@ -106,7 +106,14 @@ export function createIntegrationToken(ctx: Ctx, input: { name: string; clientId
       summary: `إصدار رمز ربط «${input.name}»: ${input.clientIds.length} عميل، ${input.caseIds.length} قضية، نصوص المستندات: ${input.allowDocumentText ? 'مسموحة' : 'غير مسموحة'}`,
     });
   });
-  return { id, token: raw, snippets: configSnippets(ctx.paths.dataDir, raw) };
+  // موصّل Claude في المتصفح والآيفون (claude.ai) عبر الرابط الآمن لخادم المكتب، إن كان مضبوطًا
+  let publicUrl: string | null = null;
+  try {
+    publicUrl = ctx.db.get<{ value: string | null }>("SELECT value FROM hub_state WHERE key = 'public_url'")?.value ?? null;
+  } catch {
+    publicUrl = null;
+  }
+  return { id, token: raw, snippets: { ...configSnippets(ctx.paths.dataDir, raw), claudeWebUrl: publicUrl ? `${publicUrl.replace(/\/+$/, '')}/mcp` : null, claudeWebHeader: `Bearer ${raw}` } };
 }
 
 export function revokeIntegrationToken(ctx: Ctx, input: { id: string }) {

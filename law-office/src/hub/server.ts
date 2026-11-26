@@ -13,6 +13,10 @@ import type { AppCore } from '../main/core';
 import { attachmentPath } from '../main/paths';
 import * as authSvc from '../main/services/auth';
 import { HubStore, hubGet, hubSet } from './store';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { buildMcpServer } from '../mcp/tools';
+import { openAccessLog } from '../main/integration/accessLog';
+import { AccessDenied, resolveToken } from '../main/integration/readApi';
 import { RateLimiter, createDevice, deviceByToken, issueCode, renewTrust, touchDevice, verifyCode, type Mailer } from './auth';
 
 export interface HubDeps {
@@ -132,6 +136,9 @@ export function createHubServer(d: HubDeps): http.Server {
     const b = Buffer.from(sig);
     return a.length === b.length && timingSafeEqual(a, b);
   };
+
+  let accessLog: ReturnType<typeof openAccessLog> | null = null;
+  const mcpLog = () => (accessLog ??= openAccessLog(path.join(core.paths.integrationDir, 'access-log.sqlite')));
 
   /** يتحقق من كلمة المرور بقواعد البرنامج نفسها (الإيقاف المؤقت بعد المحاولات الخاطئة). */
   async function checkPassword(username: string, password: string): Promise<{ userId: string; role: string }> {
@@ -346,6 +353,32 @@ export function createHubServer(d: HubDeps): http.Server {
       }
       res.writeHead(200);
       return res.end();
+    }
+
+    // ———— موصّل Claude (claude.ai): أدوات قراءة فقط بالرمز نفسه ونطاقه، عبر الرابط الآمن ————
+    if (p === '/mcp') {
+      const auth = String(req.headers.authorization ?? '');
+      const tok = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+      try {
+        resolveToken(db(), tok, now());
+      } catch (e) {
+        if (!limiter.allow(`mcp:${clientIp(req)}`)) throw new HttpError(429, 'محاولات كثيرة');
+        throw new HttpError(401, e instanceof AccessDenied ? e.message : 'رمز غير صالح', 'UNAUTHENTICATED');
+      }
+      if (req.method !== 'POST') {
+        res.writeHead(405, { allow: 'POST' });
+        return res.end();
+      }
+      const body = await readJson(req);
+      const mcp = buildMcpServer(() => db(), tok, mcpLog());
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+      res.on('close', () => {
+        void transport.close();
+        void mcp.close();
+      });
+      await mcp.connect(transport);
+      await transport.handleRequest(req, res, body);
+      return;
     }
 
     // ———— واجهة الرابط الآمن (ملفات ثابتة) ————

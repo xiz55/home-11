@@ -6,6 +6,8 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { createHash } from 'node:crypto';
 import { HubStore } from '../../src/hub/store';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { createHubServer } from '../../src/hub/server';
 import { HubClient } from '../../src/sync/hubClient';
 import { localCounts } from '../../src/sync/setup';
@@ -233,6 +235,33 @@ describe('خادم المكتب المحلي: الماك يتزامن مع جه�
     const code = lastCode();
     expect((await other.json('/api/web/verify', { challengeId: s.body.challengeId, code })).status).toBe(200);
     expect((await other.json('/api/web/verify', { challengeId: s.body.challengeId, code })).status).toBe(401);
+  });
+
+  it('9b. موصّل Claude عبر الرابط الآمن: أدوات قراءة فقط بالرمز ونطاقه؛ دون رمز أو بعد إلغائه مرفوض', async () => {
+    await call(A.core, 'S-A9', 'auth.login', { username: 'owner', password: OWNER.password });
+    await call(A.core, 'S-A9', 'integration.setEnabled', { enabled: true, acknowledged: true });
+    const t = await call(A.core, 'S-A9', 'integration.createToken', { name: 'Claude في المتصفح', clientIds: [ids.clientId], caseIds: [], allowDocumentText: false });
+    const connect = async (token: string | null) => {
+      const c = new Client({ name: 'claude-ai-test', version: '1' });
+      await c.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers: token ? { authorization: `Bearer ${token}` } : {} } }));
+      return c;
+    };
+    const c = await connect(t.token);
+    const tools = (await c.listTools()).tools.map((x) => x.name);
+    expect(tools).toEqual(expect.arrayContaining(['find_clients', 'find_cases', 'get_case_summary', 'list_upcoming']));
+    expect(tools.some((n) => /create|update|delete|write|sql/i.test(n))).toBe(false);
+    const r = (await c.callTool({ name: 'find_clients', arguments: { query: 'المثال' } })) as { content: { text: string }[] };
+    expect(r.content[0].text).toContain('المثال');
+    await c.close();
+    await expect(connect(null)).rejects.toThrow();
+    await expect(connect('lom_invalid-token-value-123456')).rejects.toThrow();
+    // الإلغاء يسري فورًا
+    const st = await call(A.core, 'S-A9', 'integration.state', {});
+    await call(A.core, 'S-A9', 'integration.revokeToken', { id: st.tokens.find((x: { name: string }) => x.name === 'Claude في المتصفح').id });
+    await expect(connect(t.token)).rejects.toThrow();
+    // كل استدعاء مسجل في سجل الوصول
+    const log = await call(A.core, 'S-A9', 'integration.accessLog', {});
+    expect(JSON.stringify(log)).toContain('find_clients');
   });
 
   it('10. إلغاء جهاز من جهاز المكتب يوقفه فورًا (الماك والآيفون)', async () => {
