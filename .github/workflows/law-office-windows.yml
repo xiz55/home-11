@@ -53,7 +53,7 @@ jobs:
           Start-Process $setup.FullName -ArgumentList '/S' -Wait
           $exe = "$env:LOCALAPPDATA\Programs\LawOfficeManager\LawOfficeManager.exe"
           if (-not (Test-Path $exe)) { throw "not installed: $exe" }
-          $lnk = Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter *.lnk | Where-Object { $_.Name -like '*مكتب المحاماة*' }
+          $lnk = Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter *.lnk | Where-Object { $_.Name -like '*الشهراني*' }
           if (-not $lnk) { throw 'start menu shortcut missing' }
           $env:LAWOFFICE_EXEC = $exe
           $env:LAWOFFICE_MCP_SCRIPT = "$env:LOCALAPPDATA\Programs\LawOfficeManager\resources\app.asar.unpacked\dist\mcp\server.js"

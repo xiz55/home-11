@@ -3,7 +3,7 @@
 set -euo pipefail
 APP="$1"      # مسار LawOfficeManager.app
 OUT="$2"      # مسار ملف DMG الناتج
-VOL="إدارة مكتب المحاماة"
+VOL="مكتب المحامي محمد إبراهيم الشهراني للمحاماة"
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 ditto "$APP" "$STAGE/LawOfficeManager.app"

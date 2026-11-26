@@ -37,8 +37,8 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
-  shortcutName: "إدارة مكتب المحاماة"
-  uninstallDisplayName: "إدارة مكتب المحاماة"
+  shortcutName: "مكتب المحامي محمد إبراهيم الشهراني للمحاماة"
+  uninstallDisplayName: "مكتب المحامي محمد إبراهيم الشهراني للمحاماة"
   deleteAppDataOnUninstall: false
   artifactName: "LawOfficeManager-Setup-${version}-${arch}.${ext}"
   installerLanguages:
@@ -56,8 +56,13 @@ mac:
   # يُغلَّف التطبيق مجلدًا ثم يُنشأ DMG بأداة hdiutil الأصلية (scripts/make-dmg.sh)
   target:
     - target: dir
+  extraResources:
+    - from: resources/mac/ar.lproj/
+      to: ar.lproj/
   extendInfo:
-    CFBundleDisplayName: "إدارة مكتب المحاماة"
+    CFBundleDisplayName: "مكتب المحامي محمد إبراهيم الشهراني للمحاماة"
+    CFBundleName: "مكتب المحامي محمد إبراهيم الشهراني للمحاماة"
+    LSHasLocalizedDisplayName: true
     CFBundleDevelopmentRegion: ar
     CFBundleLocalizations: [ar]
     NSHumanReadableCopyright: "Law Office Manager — بيانات محلية على هذا الجهاز"

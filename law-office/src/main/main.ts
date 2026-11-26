@@ -301,7 +301,7 @@ function buildAppMenu() {
     if (!wc) return;
     wc.setZoomLevel(d === null ? 0 : Math.max(-2, Math.min(3, wc.getZoomLevel() + d)));
   };
-  const name = 'إدارة مكتب المحاماة';
+  const name = 'مكتب المحامي محمد إبراهيم الشهراني للمحاماة';
   const template: MenuItemConstructorOptions[] = [
     {
       label: name,
@@ -504,7 +504,7 @@ function startScheduler() {
         const anyUnlocked = [...core.sessions.values()].some((s) => !s.locked);
         for (const r of due.slice(0, 5)) {
           // عند قفل الجلسة لا تظهر أسماء العملاء في الإشعار
-          const n = new Notification({ title: anyUnlocked ? 'تذكير — مكتب المحاماة' : 'تذكير بموعد', body: anyUnlocked ? r.label : 'لديك موعد قريب. افتح البرنامج للاطلاع.', silent: false });
+          const n = new Notification({ title: anyUnlocked ? 'تذكير — مكتب المحامي محمد إبراهيم الشهراني للمحاماة' : 'تذكير بموعد', body: anyUnlocked ? r.label : 'لديك موعد قريب. افتح البرنامج للاطلاع.', silent: false });
           n.on('click', () => {
             if (mainWindow) {
               if (mainWindow.isMinimized()) mainWindow.restore();
