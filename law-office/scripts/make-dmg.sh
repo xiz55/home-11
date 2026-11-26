@@ -6,7 +6,8 @@ OUT="$2"      # مسار ملف DMG الناتج
 VOL="مكتب المحامي محمد إبراهيم الشهراني للمحاماة"
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
-ditto "$APP" "$STAGE/LawOfficeManager.app"
+# اسم التطبيق الظاهر في Finder والـDock هو اسم مجلد التطبيق نفسه (بأي لغة للنظام)؛ الاسم الداخلي ومجلد البيانات لا يتغيران
+ditto "$APP" "$STAGE/$VOL.app"
 ln -s /Applications "$STAGE/Applications"
 rm -f "$OUT"
 # قد يفشل hdiutil مؤقتًا بـ «Resource busy» عند انشغال القرص (فهرسة/فحص)؛ نعيد المحاولة

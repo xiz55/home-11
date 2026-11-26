@@ -69,6 +69,7 @@ jobs:
           node --test --test-reporter=spec tests/e2e/journey.e2e.mjs tests/e2e/appointments.e2e.mjs tests/e2e/cloud-ui.e2e.mjs tests/e2e/hub.e2e.mjs
       - name: Install from the DMG into ~/Applications, launch and verify
         run: |
+          NAME="مكتب المحامي محمد إبراهيم الشهراني للمحاماة"
           DMG=$(ls release/*.dmg | head -1)
           hdiutil verify "$DMG"
           MNT=$(mktemp -d)
@@ -76,24 +77,24 @@ jobs:
           ls -la "$MNT"
           test -L "$MNT/Applications"
           mkdir -p "$HOME/Applications"
-          ditto "$MNT/LawOfficeManager.app" "$HOME/Applications/LawOfficeManager.app"
+          ditto "$MNT/$NAME.app" "$HOME/Applications/$NAME.app"
           hdiutil detach "$MNT"
-          export LAWOFFICE_EXEC="$HOME/Applications/LawOfficeManager.app/Contents/MacOS/LawOfficeManager"
-          export LAWOFFICE_MCP_SCRIPT="$HOME/Applications/LawOfficeManager.app/Contents/Resources/app.asar.unpacked/dist/mcp/server.js"
+          export LAWOFFICE_EXEC="$HOME/Applications/$NAME.app/Contents/MacOS/LawOfficeManager"
+          export LAWOFFICE_MCP_SCRIPT="$HOME/Applications/$NAME.app/Contents/Resources/app.asar.unpacked/dist/mcp/server.js"
           node tests/e2e/installed-smoke.mjs
           node tests/e2e/mac-installed.mjs
           # تشغيل التطبيق المثبت كما يفعل المستخدم (open) والتحقق أنه يعمل ثم إغلاقه بأمر الإنهاء
-          open "$HOME/Applications/LawOfficeManager.app"
-          for i in $(seq 1 30); do pgrep -f "Applications/LawOfficeManager.app/Contents/MacOS/LawOfficeManager" && break; sleep 1; done
-          pgrep -f "Applications/LawOfficeManager.app/Contents/MacOS/LawOfficeManager"
+          open "$HOME/Applications/$NAME.app"
+          for i in $(seq 1 30); do pgrep -f "Contents/MacOS/LawOfficeManager" && break; sleep 1; done
+          pgrep -f "Contents/MacOS/LawOfficeManager"
           sleep 5
-          osascript -e 'tell application "LawOfficeManager" to quit' || pkill -f "Applications/LawOfficeManager.app/Contents/MacOS/LawOfficeManager"
+          osascript -e 'tell application id "com.lawoffice.manager" to quit' || pkill -f "Contents/MacOS/LawOfficeManager"
           sleep 3
           ls -la "$HOME/Library/Application Support/LawOfficeManager/data"
       - name: Verify the Arabic name shown by macOS (Finder / Dock)
         run: |
           set -e
-          APP="$HOME/Applications/LawOfficeManager.app"
+          APP="$HOME/Applications/مكتب المحامي محمد إبراهيم الشهراني للمحاماة.app"
           EXPECTED="مكتب المحامي محمد إبراهيم الشهراني للمحاماة"
           plutil -p "$APP/Contents/Info.plist" | grep -E "CFBundleDisplayName|CFBundleName|LSHasLocalizedDisplayName|CFBundleDevelopmentRegion"
           cat "$APP/Contents/Resources/ar.lproj/InfoPlist.strings"
