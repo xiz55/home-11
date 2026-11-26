@@ -61,7 +61,6 @@ mac:
       to: ar.lproj/
   extendInfo:
     CFBundleDisplayName: "مكتب المحامي محمد إبراهيم الشهراني للمحاماة"
-    CFBundleName: "مكتب المحامي محمد إبراهيم الشهراني للمحاماة"
     LSHasLocalizedDisplayName: true
     CFBundleDevelopmentRegion: ar
     CFBundleLocalizations: [ar]
