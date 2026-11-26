@@ -99,7 +99,8 @@ jobs:
           plutil -p "$APP/Contents/Info.plist" | grep -E "CFBundleDisplayName|CFBundleName|LSHasLocalizedDisplayName|CFBundleDevelopmentRegion"
           cat "$APP/Contents/Resources/ar.lproj/InfoPlist.strings"
           # الاسم كما يعرضه نظام الماك نفسه (Finder وDock وLaunchpad)
-          printf 'import Foundation\nprint(FileManager.default.displayName(atPath: CommandLine.arguments[1]))\n' > /tmp/dn.swift
+          # يضيف النظام علامات اتجاه غير مرئية حول الاسم العربي (LRM/FSI/PDI)؛ تُزال قبل المقارنة
+          printf 'import Foundation\nlet n = FileManager.default.displayName(atPath: CommandLine.arguments[1])\nprint(String(n.unicodeScalars.filter { !["\\u{200E}", "\\u{200F}", "\\u{2066}", "\\u{2067}", "\\u{2068}", "\\u{2069}"].contains(String($0)) }.map(Character.init)))\n' > /tmp/dn.swift
           NAME=$(swift /tmp/dn.swift "$APP")
           echo "macOS display name: $NAME"
           test "$NAME" = "$EXPECTED"
