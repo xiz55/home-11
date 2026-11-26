@@ -90,6 +90,25 @@ jobs:
           osascript -e 'tell application "LawOfficeManager" to quit' || pkill -f "Applications/LawOfficeManager.app/Contents/MacOS/LawOfficeManager"
           sleep 3
           ls -la "$HOME/Library/Application Support/LawOfficeManager/data"
+      - name: Verify the Arabic name shown by macOS (Finder / Dock)
+        run: |
+          set -e
+          APP="$HOME/Applications/LawOfficeManager.app"
+          EXPECTED="مكتب المحامي محمد إبراهيم الشهراني للمحاماة"
+          plutil -p "$APP/Contents/Info.plist" | grep -E "CFBundleDisplayName|CFBundleName|LSHasLocalizedDisplayName|CFBundleDevelopmentRegion"
+          cat "$APP/Contents/Resources/ar.lproj/InfoPlist.strings"
+          # الاسم كما يعرضه نظام الماك نفسه (Finder وDock وLaunchpad)
+          printf 'import Foundation\nprint(FileManager.default.displayName(atPath: CommandLine.arguments[1]))\n' > /tmp/dn.swift
+          NAME=$(swift /tmp/dn.swift "$APP")
+          echo "macOS display name: $NAME"
+          test "$NAME" = "$EXPECTED"
+          # بلغة نظام إنجليزية أيضًا (التطبيق معرّب بالعربية فقط فيُعرض الاسم العربي)
+          echo "system languages: $(defaults read -g AppleLanguages | tr -d '\n ')"
+          mkdir -p test-results/e2e
+          open -R "$APP"
+          sleep 4
+          screencapture -x test-results/e2e/mac-finder-name.png || true
+          osascript -e 'tell application "Finder" to close every window' || true
       - name: Upload test screenshots
         if: always()
         uses: actions/upload-artifact@v4
