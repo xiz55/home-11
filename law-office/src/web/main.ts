@@ -166,6 +166,7 @@ function gate(officeName: string): Promise<void> {
 }
 
 async function boot() {
+  (window as unknown as { __lawBooted?: boolean }).__lawBooted = false;
   document.documentElement.classList.add('platform-ios', 'platform-web');
   let st = { session: false, officeName: '' };
   try {
@@ -174,7 +175,12 @@ async function boot() {
     document.getElementById('root')!.textContent = 'تعذر الاتصال بجهاز المكتب. تحقق من الإنترنت وأن جهاز المكتب يعمل.';
     return;
   }
-  if (!st.session) await gate(st.officeName);
+  if (!st.session) {
+    const p = gate(st.officeName);
+    (window as unknown as { __lawBooted?: boolean }).__lawBooted = true;
+    await p;
+  }
+  (window as unknown as { __lawBooted?: boolean }).__lawBooted = true;
   document.getElementById('root')!.innerHTML = '';
   await import('../renderer/main');
 }

@@ -54,6 +54,7 @@ if (!only || only === 'renderer') {
   await viteBuild({ configFile: path.join(root, 'vite.web.config.ts'), logLevel: 'warn' });
   const web = path.join(dist, 'web');
   fs.copyFileSync(path.join(root, 'src/web/manifest.webmanifest'), path.join(web, 'manifest.webmanifest'));
+  fs.copyFileSync(path.join(root, 'src/web/boot-errors.js'), path.join(web, 'boot-errors.js'));
   fs.copyFileSync(path.join(root, 'resources/icon-512.png'), path.join(web, 'icon.png'));
   const pdfjsWeb = path.join(root, 'node_modules/pdfjs-dist');
   for (const sub of ['cmaps', 'standard_fonts', 'wasm']) copyDir(path.join(pdfjsWeb, sub), path.join(web, 'pdfjs', sub));

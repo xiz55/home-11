@@ -149,9 +149,11 @@ export function createHubServer(d: HubDeps): http.Server {
     core.sessions.set(`web-${deviceId}`, { userId, lastActivity: now().getTime(), locked: false, dirty: false });
   }
 
-  function setCookie(res: http.ServerResponse, token: string) {
-    // صالح 15 يومًا بعد آخر تحقق برمز؛ HttpOnly فلا تقرؤه الصفحة، وSecure (الرابط عبر HTTPS)
-    res.setHeader('set-cookie', `${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${15 * 86400}`);
+  function setCookie(req: http.IncomingMessage, res: http.ServerResponse, token: string) {
+    // صالح 15 يومًا بعد آخر تحقق برمز؛ HttpOnly فلا تقرؤه الصفحة، وSecure عبر الرابط الآمن (HTTPS).
+    // على الجهاز نفسه فقط (127.0.0.1 دون HTTPS) يُحذف Secure لأن بعض المتصفحات (Safari) لا تحفظه دون HTTPS.
+    const local = /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(String(req.headers.host ?? '')) && !req.headers['x-forwarded-for'];
+    res.setHeader('set-cookie', `${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly;${local ? '' : ' Secure;'} SameSite=Strict; Max-Age=${15 * 86400}`);
   }
 
   function webDevice(req: http.IncomingMessage) {
@@ -215,7 +217,7 @@ export function createHubServer(d: HubDeps): http.Server {
         deviceId = known;
       } else {
         const dev = createDevice(db(), now(), v.userId, 'web', String(v.meta.deviceName ?? 'متصفح'), 'web');
-        setCookie(res, dev.token);
+        setCookie(req, res, dev.token);
         deviceId = dev.id;
       }
       startWebSession(deviceId, v.userId);
