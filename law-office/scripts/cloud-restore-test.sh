@@ -25,6 +25,9 @@ docker run -d --name sbrestore-auth --network host -e GOTRUE_API_HOST=127.0.0.1 
   -e GOTRUE_SITE_URL=http://127.0.0.1 -e GOTRUE_JWT_SECRET=$SECRET supabase/gotrue:v2.164.0 >/dev/null
 for _ in $(seq 1 60); do curl -fs http://127.0.0.1:9998/health >/dev/null && break; sleep 2; done
 docker rm -f sbrestore-auth >/dev/null
+# قاعدة Supabase قد تعيد التشغيل مرة أثناء التهيئة الأولى: ننتظر أن تقبل الاتصال فعلًا قبل الاستعادة
+for _ in $(seq 1 60); do psql "$DST" -Atc 'select 1' >/dev/null 2>&1 && break; sleep 2; done
+psql "$DST" -Atc 'select 1' >/dev/null
 
 # 3) الاستعادة: الحسابات أولًا ثم بيانات المكتب.
 # أدوات pg_restore الأحدث (17+) ترسل الإعداد transaction_timeout الذي لا يعرفه خادم 15 — خطأ غير مؤثر يُتجاهل وحده؛ أي خطأ آخر يُفشل الاختبار.
